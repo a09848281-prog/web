@@ -153,6 +153,12 @@ class MainActivity : Activity() {
             Toast.makeText(this, "GAS設定を読み込めていません。", Toast.LENGTH_LONG).show()
             return
         }
+        val savedDeviceId = prefs.getString("deviceId", "") ?: ""
+        val savedDeviceSecret = prefs.getString("deviceSecret", "") ?: ""
+        if (savedDeviceId.isBlank() || savedDeviceSecret.isBlank()) {
+            Toast.makeText(this, "先に「監視待機を開始」を押して端末を初期登録してください。", Toast.LENGTH_LONG).show()
+            return
+        }
         val cameraOk = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         val micOk = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val locationOk = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
