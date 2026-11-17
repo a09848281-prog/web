@@ -26,8 +26,15 @@ class ApiClient(private val gasUrl: String) {
             val text = if (code in 300..399) {
                 val location = connection.getHeaderField("Location")
                     ?: error("GAS redirect URLがありません。HTTP $code")
+                val redirectUrl = URL(location)
+                val redirectHost = redirectUrl.host.lowercase()
+                require(
+                    redirectUrl.protocol == "https" &&
+                    (redirectHost == "script.googleusercontent.com" ||
+                        redirectHost.endsWith(".googleusercontent.com"))
+                ) { "GASから許可されていないリダイレクト先が返されました。" }
                 connection.disconnect()
-                val redirected = URL(location).openConnection() as HttpURLConnection
+                val redirected = redirectUrl.openConnection() as HttpURLConnection
                 redirected.connectTimeout = 15000
                 redirected.readTimeout = 20000
                 try {
