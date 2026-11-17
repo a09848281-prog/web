@@ -56,6 +56,11 @@ class MonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Keep the foreground service and its notification while the user removes the UI task.
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val startIntent = intent
         if (startIntent == null) {
@@ -204,13 +209,24 @@ class MonitorService : Service() {
                                 "offer" -> {
                                     if (signal.optString("sdp").isBlank()) continue
                                     val session = signal.optString("sessionId")
-                                    if (rtc == null) {
-                                        val currentApi = api ?: continue
-                                        rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState)
+                                    try {
+                                        val cameraGranted = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                                        val micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                                        if (!cameraGranted || !micGranted) {
+                                            notifyState("接続できません：カメラ・マイクの権限を確認してください")
+                                            continue
+                                        }
+                                        if (rtc == null) {
+                                            val currentApi = api ?: continue
+                                            rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState)
+                                        }
+                                        rtc?.handleOffer(session, signal.optString("sdp"))
+                                        rtc?.setQuality(currentQuality, currentDataMode)
+                                        notifyState("接続要求を処理しています")
+                                    } catch (e: Exception) {
+                                        Log.e("RemoteCameraService", "Offer handling failed; keep foreground service alive", e)
+                                        notifyState("接続開始に失敗しました：" + (e.message ?: "詳細不明") + "。待機は継続します")
                                     }
-                                    rtc?.handleOffer(session, signal.optString("sdp"))
-                                    rtc?.setQuality(currentQuality, currentDataMode)
-                                    notifyState("接続要求を受信しました")
                                 }
                                 "bye" -> {
                                     rtc?.closeSession(signal.optString("sessionId"))
@@ -226,7 +242,8 @@ class MonitorService : Service() {
                         notifyState(if (rtc?.hasPeers() == true) "監視中・接続済み" else "監視待機中")
                     }
                 } catch (e: Exception) {
-                    notifyState("GAS通信エラー：再試行します")
+                    Log.e("RemoteCameraService", "Polling iteration failed; foreground service remains active", e)
+                    notifyState("通信または接続処理に失敗しました。待機を継続して再試行します")
                 }
                 delay(AppConfig.POLL_SECONDS * 1000L)
             }
