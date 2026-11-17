@@ -51,6 +51,7 @@ class MonitorService : Service() {
     private var currentDataMode = "standard"
     private var lastLocationAttempt = 0L
     private var lastCodeRefresh = 0L
+    private val apiReady = CompletableDeferred<Unit>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -81,10 +82,7 @@ class MonitorService : Service() {
         if (action == ACTION_REFRESH_CODE) {
             scope.launch {
                 try {
-                    if (api == null) {
-                        api = ApiClient(gasUrl)
-                        ensureDevice()
-                    }
+                    withTimeout(30000L) { apiReady.await() }
                     refreshCode()
                 } catch (e: Exception) {
                     notifyState("ペアリングコード再発行失敗：" + (e.message ?: "通信エラー"))
@@ -139,6 +137,7 @@ class MonitorService : Service() {
         try {
             api = ApiClient(gasUrl)
             ensureDevice()
+            if (!apiReady.isCompleted) apiReady.complete(Unit)
             while (scope.isActive) {
                 try {
                     val deviceId = prefs.getString("deviceId", "") ?: ""
@@ -184,6 +183,7 @@ class MonitorService : Service() {
                 delay(AppConfig.POLL_SECONDS * 1000L)
             }
         } catch (e: Exception) {
+            if (!apiReady.isCompleted) apiReady.completeExceptionally(e)
             notifyState("待機サービスを開始できませんでした")
         }
     }
