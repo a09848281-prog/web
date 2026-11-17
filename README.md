@@ -2,17 +2,20 @@
 
 Firebase非使用・GAS／GitHub／Googleスプレッドシート構成の個人利用プロジェクトです。
 
-## 現行方式 v3.1
+## 現行方式 v3.2
 - Webにユーザー登録・ログイン画面はありません。
 - Androidアプリに表示される有効期限付き8桁コードでiPadをペアリングします。
 - ペアリング成功時に端末専用の操作トークンを発行し、このiPadのブラウザー内に保存します。
 - Androidの秘密情報と操作トークンを照合して、カメラ操作・設定・位置情報へのアクセスを制限します。
 - ペアリングコードは10分で失効し、Androidから再発行できます。
 - 映像・音声はWebRTCで直接通信し、GASやSheetsには保存しません。
+- 起動時にWebからGASのPOST疎通・DBスキーマを確認し、未設定時は原因を表示します。
+- ペアリング解除で操作トークンをサーバー側でも失効し、Androidは次回ポーリング時に映像・音声を停止します。
+- 画質設定は解像度・フレームレート・最大ビットレートに反映します。
 
 ## 仕様書・手順
 - [元仕様書 v3.0](docs/Android-iPad-Remote-Surveillance-Camera-Spec-v3.0.md)
-- [アカウント廃止・ペアリング方式 v3.1](docs/PAIRING-ONLY-DESIGN-v3.1.md)
+- [アカウント廃止・ペアリング方式 v3.2](docs/PAIRING-ONLY-DESIGN-v3.1.md)
 - [セットアップ手順](docs/QUICKSTART.md)
 - [実装状況](docs/IMPLEMENTATION-STATUS.md)
 - [ビルド検証結果](docs/BUILD-REPORT.md)
