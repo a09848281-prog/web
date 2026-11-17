@@ -167,9 +167,10 @@ class MonitorService : Service() {
                                 if (rtc == null) {
                                     val currentApi = api ?: continue
                                     rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState)
-                                    rtc?.setQuality(currentQuality, currentDataMode)
                                 }
                                 rtc?.handleOffer(session, signal.optString("sdp"))
+                                // Apply saved quality after handleOffer creates the RTP video sender.
+                                rtc?.setQuality(currentQuality, currentDataMode)
                                 notifyState("接続要求を受信しました")
                             }
                         }
