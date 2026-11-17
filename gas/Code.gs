@@ -30,7 +30,7 @@ function doPost(e){
 }
 function bridge_(id,result){
  const json=JSON.stringify({channel:"remote-camera-gas",requestId:id,result:result}).replace(/</g,"\\u003c").replace(/>/g,"\\u003e").replace(/&/g,"\\u0026");
- return HtmlService.createHtmlOutput("<!doctype html><meta charset='utf-8'><script>parent.postMessage("+json+",'*');</script><p>処理が完了しました。</p>").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+ return HtmlService.createHtmlOutput("<!doctype html><html><head><meta charset='utf-8'></head><body><script>window.top.postMessage("+json+",'https://a09848281-prog.github.io');</script><p>処理が完了しました。</p></body></html>").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 function dispatch_(r){
  switch(String(r.action||"")){
