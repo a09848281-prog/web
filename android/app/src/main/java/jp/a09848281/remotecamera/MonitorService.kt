@@ -26,6 +26,7 @@ import java.util.UUID
 class MonitorService : Service() {
     companion object {
         const val ACTION_START = "jp.a09848281.remotecamera.START"
+        const val ACTION_REFRESH_CODE = "jp.a09848281.remotecamera.REFRESH_CODE"
         const val ACTION_CODE = "jp.a09848281.remotecamera.CODE"
         const val EXTRA_GAS_URL = "gas_url"
         const val EXTRA_CODE = "registration_code"
@@ -54,16 +55,41 @@ class MonitorService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action != ACTION_START) {
+        val action = intent?.action
+        if (action != ACTION_START && action != ACTION_REFRESH_CODE) {
             stopSelf()
             return START_NOT_STICKY
         }
-        gasUrl = intent.getStringExtra(EXTRA_GAS_URL) ?: ""
+        gasUrl = intent.getStringExtra(EXTRA_GAS_URL)
+            ?: prefs.getString("gasUrl", "")
+            ?: ""
         if (!gasUrl.startsWith("https://script.google.com/")) {
             stopSelf()
             return START_NOT_STICKY
         }
         prefs.edit().putString("gasUrl", gasUrl).apply()
+        startMonitoringForeground()
+
+        if (pollJob?.isActive != true) pollJob = scope.launch { pollLoop() }
+        if (locationJob?.isActive != true) locationJob = scope.launch { locationLoop() }
+
+        if (action == ACTION_REFRESH_CODE) {
+            scope.launch {
+                try {
+                    if (api == null) {
+                        api = ApiClient(gasUrl)
+                        ensureDevice()
+                    }
+                    refreshCode()
+                } catch (e: Exception) {
+                    notifyState("ペアリングコード再発行失敗：" + (e.message ?: "通信エラー"))
+                }
+            }
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun startMonitoringForeground() {
         createChannel()
         val notification = notification("監視待機中（接続要求を確認しています）")
         if (Build.VERSION.SDK_INT >= 29) {
@@ -74,9 +100,6 @@ class MonitorService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        if (pollJob?.isActive != true) pollJob = scope.launch { pollLoop() }
-        if (locationJob?.isActive != true) locationJob = scope.launch { locationLoop() }
-        return START_NOT_STICKY
     }
 
     private fun createChannel() {
@@ -123,6 +146,11 @@ class MonitorService : Service() {
                         if (System.currentTimeMillis() - lastCodeRefresh > 8 * 60 * 1000L) refreshCode()
                         notifyState("Android端末の登録待ち：Webに8桁コードを入力")
                     } else {
+                        val codeActive = response.optBoolean("pairingCodeActive", false)
+                        if (!codeActive && (prefs.getString("registrationCode", "") ?: "").isNotBlank()) {
+                            prefs.edit().remove("registrationCode").apply()
+                            broadcastCode("", deviceId)
+                        }
                         afterSeq = maxOf(afterSeq, response.optInt("latestSeq", afterSeq))
                         prefs.edit().putInt("afterSeq", afterSeq).apply()
                         applySettings(response.optJSONObject("settings") ?: JSONObject())
@@ -207,29 +235,50 @@ class MonitorService : Service() {
 
     private suspend fun processCommand(command: JSONObject) {
         val name = command.optString("command")
+        val commandId = command.optString("commandId")
         val payload = command.optJSONObject("payload") ?: JSONObject()
-        when (name) {
-            "location_once" -> requestLocation("manual")
-            "location_settings" -> {
-                applySettings(payload)
-                prefs.edit().putBoolean("connectedLocationEnabled", connectedLocationEnabled)
-                    .putBoolean("idleLocationEnabled", idleLocationEnabled)
-                    .putLong("connectedInterval", connectedInterval)
-                    .putLong("idleInterval", idleInterval).apply()
+        var succeeded = true
+        try {
+            when (name) {
+                "location_once" -> requestLocation("manual")
+                "location_settings" -> {
+                    applySettings(payload)
+                    prefs.edit().putBoolean("connectedLocationEnabled", connectedLocationEnabled)
+                        .putBoolean("idleLocationEnabled", idleLocationEnabled)
+                        .putLong("connectedInterval", connectedInterval)
+                        .putLong("idleInterval", idleInterval).apply()
+                }
+                "camera" -> rtc?.switchCamera(payload.optString("facing", "back"))
+                "volume" -> {
+                    val percent = payload.optInt("percent", 70).coerceIn(0, 100)
+                    val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+                    val stream = AudioManager.STREAM_VOICE_CALL
+                    val max = audio.getStreamMaxVolume(stream)
+                    audio.setStreamVolume(stream, (max * percent / 100.0).toInt(), 0)
+                }
+                "quality", "data_mode" -> rtc?.setQuality(
+                    payload.optString("quality", "720"),
+                    payload.optString("dataMode", "standard")
+                )
+                "disconnect" -> {
+                    rtc?.dispose()
+                    rtc = null
+                    notifyState("監視待機中")
+                }
             }
-            "camera" -> rtc?.switchCamera(payload.optString("facing", "back"))
-            "volume" -> {
-                val percent = payload.optInt("percent", 70).coerceIn(0, 100)
-                val audio = getSystemService(AUDIO_SERVICE) as AudioManager
-                val stream = AudioManager.STREAM_VOICE_CALL
-                val max = audio.getStreamMaxVolume(stream)
-                audio.setStreamVolume(stream, (max * percent / 100.0).toInt(), 0)
-            }
-            "quality", "data_mode" -> rtc?.setQuality(payload.optString("quality", "720"), payload.optString("dataMode", "standard"))
-            "disconnect" -> {
-                rtc?.dispose()
-                rtc = null
-                notifyState("監視待機中")
+        } catch (e: Exception) {
+            succeeded = false
+            notifyState("命令実行失敗：" + (e.message ?: name))
+        }
+        if (commandId.isNotBlank()) {
+            try {
+                api?.call("ack_command", JSONObject()
+                    .put("deviceId", prefs.getString("deviceId", ""))
+                    .put("deviceSecret", prefs.getString("deviceSecret", ""))
+                    .put("commandId", commandId)
+                    .put("success", succeeded))
+            } catch (_: Exception) {
+                notifyState("命令の結果をGASへ送信できませんでした")
             }
         }
     }
