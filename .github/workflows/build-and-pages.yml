@@ -64,9 +64,16 @@ jobs:
           }
           if (!android.includes('ACTION_STOP') || !android.includes('addAction(') ||
               !android.includes('stopMonitoringNow(') ||
+              !android.includes('Offer handling failed; keep foreground service alive') ||
+              !rtc.includes('retrying conservative VGA mode') ||
               !main.includes('refreshMonitoringButtons') ||
               !main.includes('GASでペアリング確認済み')) {
-            throw new Error('Background stop action or server-verified pairing state is missing.');
+            throw new Error('Background stop action, RTC recovery, or server-verified pairing state is missing.');
+          }
+          const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
+          if (!manifest.includes('android.permission.INTERNET') ||
+              !manifest.includes('android.permission.ACCESS_NETWORK_STATE')) {
+            throw new Error('Android network permissions are missing.');
           }
           if (!gas.includes('case "unpair_device"') || !gas.includes('function unpairDevice_') ||
               !app.includes('kind: "bye"') || !android.includes('"bye"') ||
