@@ -90,7 +90,7 @@ function api(action, data = {}) {
 
     let finished = false;
     const timer = setTimeout(() => finish(
-      Error("GASの応答がありません。GASコードの更新・ウェブアプリの再デプロイを確認してください。")
+      Error("GASから30秒以内に応答が届きませんでした。GASの再デプロイ状態と通信設定を確認してください。")
     ), Number(S.cfg.requestTimeoutMs) || 30000);
 
     function finish(error, value) {
@@ -104,7 +104,9 @@ function api(action, data = {}) {
       else resolve(value);
     }
     function listener(event) {
-      if (event.source !== frame.contentWindow) return;
+      // Apps Script HtmlService may nest its sandbox iframe. In that case the
+      // message source is the nested Google frame, not frame.contentWindow.
+      // The random requestId and trusted Google origin below bind the response.
       if (!event.data || event.data.channel !== "remote-camera-gas" ||
           event.data.requestId !== id) return;
       const origin = String(event.origin || "");
@@ -572,7 +574,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       $("pair").disabled = true;
       setControlsEnabled(false);
       status("GAS応答なし");
-      toast("GASへのPOST通信を確認できません。Code.gsの更新とウェブアプリの再デプロイを確認してください。");
+      toast("GASへのPOST応答を確認できません: " + (healthError && healthError.message ? healthError.message : "不明な通信エラー") + "。Code.gsの更新・再デプロイも確認してください。");
       console.error("GAS health check failed", healthError);
     }
   } catch (error) {
