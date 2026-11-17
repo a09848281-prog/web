@@ -38,6 +38,7 @@ jobs:
           const app = fs.readFileSync('web/app.js', 'utf8');
           const gas = fs.readFileSync('gas/Code.gs', 'utf8');
           const android = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/MonitorService.kt', 'utf8');
+          const rtc = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/RtcEngine.kt', 'utf8');
           const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(x => x[1]);
           const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
           if (dupes.length) throw new Error('Duplicate HTML IDs: ' + [...new Set(dupes)].join(', '));
@@ -52,7 +53,19 @@ jobs:
           if (/function\s+(register_|login_|logout_|me_)\s*\(/.test(gas) || /authForm|switchAuth|authSubmit/.test(app + html)) {
             throw new Error('Legacy account UI/API remains in active sources.');
           }
-          console.log('HTML IDs, Web/GAS/Android API actions, and account-free entry point OK.');
+          if (!gas.includes('function health_()') || !gas.includes('DB_SPREADSHEET_ID') ||
+              !app.includes('api("health")') || !app.includes('api("unpair_device"')) {
+            throw new Error('GAS health/DB binding or browser API health/unpair flow is missing.');
+          }
+          if (!gas.includes('case "unpair_device"') || !gas.includes('function unpairDevice_') ||
+              !app.includes('kind: "bye"') || !android.includes('"bye"') ||
+              !rtc.includes('fun closeSession(')) {
+            throw new Error('Unpair/revoke or clean disconnect flow is incomplete.');
+          }
+          if (!rtc.includes('changeCaptureFormat')) {
+            throw new Error('Camera resolution changes are not applied to the capturer.');
+          }
+          console.log('HTML IDs, Web/GAS/Android API compatibility, DB health, account-free pairing and camera controls OK.');
           NODE
       - name: Build Android debug APK
         working-directory: android
