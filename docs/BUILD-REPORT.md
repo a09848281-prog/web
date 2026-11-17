@@ -3,12 +3,19 @@
 - 更新日：2026-11-17
 - Repository：a09848281-prog/web
 - 現行ソース：main ブランチ
-- 最新のソース変更：`b38c283ce6d8f197ea4b342ad0809af648cbe2ad`
+- ビルド対象 Commit：`b38c283ce6d8f197ea4b342ad0809af648cbe2ad`
 - Android versionCode：302
 - Android versionName：3.2.0
+- GitHub Actions build run：https://github.com/a09848281-prog/web/actions/runs/44091426011
+- ビルド結果：成功（構文・API整合性チェック、Android Gradle debug APKビルド、Artifact upload）
+- GitHub Pages deploy run：https://github.com/a09848281-prog/web/actions/runs/44091401728
+- Pages deploy結果：成功
 - APK成果物名：`remote-camera-debug-apk-v3.2`
-- 最新ビルド確認ページ：https://github.com/a09848281-prog/web/actions
-- v3.2.0の最新ソースに対するActionsの完了結果・Artifact ID・APKハッシュは、GitHub上で確認後に追記する。v3.1のAPKをv3.2として扱わない。
+- Artifact ID：`14332220491`
+- APK本体サイズ：50,776,969 bytes
+- APK SHA-256：`c45db79ece9a0dc7a725eec5d3461196e27e2c11d51cbb3bf625a97ea65dcd09`
+- Artifact ZIP SHA-256：`9619b7a2130ee2403205ea3585a7a62b6bc6e480e442be203d024a8e4822e0aa`
+- APKはActionsから取得・展開し、APKファイルの存在・サイズ・SHA-256を照合済み。
 
 ## v3.2.0で追加・修正した内容
 
@@ -44,6 +51,10 @@
 6. 最新v3.2.0 APKをGitHub Actionsから取得し、Android 13端末へインストールする。
 7. Androidで監視待機を開始し、iPadのWebから8桁コードでペアリングする。
 8. 実機で映像・双方向音声・操作・位置情報を検証する。
+
+## CI警告
+
+ビルドは成功していますが、GitHub Actionsのログには利用中ActionのNode.js 20系サポート終了に関する警告と `setup-java@v4` の非推奨警告が残っています。現在のビルド失敗原因ではありません。将来のAction更新対象です。
 
 ## 未検証・制限
 
