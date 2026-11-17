@@ -27,6 +27,7 @@ class MonitorService : Service() {
     companion object {
         const val ACTION_START = "jp.a09848281.remotecamera.START"
         const val ACTION_REFRESH_CODE = "jp.a09848281.remotecamera.REFRESH_CODE"
+        const val ACTION_STOP = "jp.a09848281.remotecamera.STOP"
         const val ACTION_CODE = "jp.a09848281.remotecamera.CODE"
         const val EXTRA_GAS_URL = "gas_url"
         const val EXTRA_CODE = "registration_code"
@@ -62,6 +63,10 @@ class MonitorService : Service() {
             return START_NOT_STICKY
         }
         val action = startIntent.action
+        if (action == ACTION_STOP) {
+            stopMonitoringNow(startId)
+            return START_NOT_STICKY
+        }
         if (action != ACTION_START && action != ACTION_REFRESH_CODE) {
             stopSelf()
             return START_NOT_STICKY
@@ -94,6 +99,7 @@ class MonitorService : Service() {
 
     private fun startMonitoringForeground() {
         createChannel()
+        prefs.edit().putBoolean("monitoringEnabled", true).apply()
         val notification = notification("監視待機中（接続要求を確認しています）")
         if (Build.VERSION.SDK_INT >= 29) {
             val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
@@ -114,6 +120,14 @@ class MonitorService : Service() {
         }
     }
 
+    private fun stopActionPendingIntent(): PendingIntent {
+        val intent = Intent(this, MonitorService::class.java).setAction(ACTION_STOP)
+        return PendingIntent.getService(
+            this, 2, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     private fun notification(text: String): Notification {
         val pending = PendingIntent.getActivity(
             this, 1, Intent(this, MainActivity::class.java),
@@ -124,9 +138,23 @@ class MonitorService : Service() {
             .setContentTitle("Remote Camera")
             .setContentText(text)
             .setContentIntent(pending)
+            .addAction(android.R.drawable.ic_media_pause, "待機を停止", stopActionPendingIntent())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
+    }
+
+    private fun stopMonitoringNow(startId: Int) {
+        pollJob?.cancel()
+        pollJob = null
+        locationJob?.cancel()
+        locationJob = null
+        rtc?.dispose()
+        rtc = null
+        prefs.edit().putBoolean("monitoringEnabled", false).apply()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+        stopSelf(startId)
     }
 
     private fun notifyState(text: String) {
@@ -147,6 +175,7 @@ class MonitorService : Service() {
                         JSONObject().put("deviceId", deviceId).put("deviceSecret", secret).put("afterSeq", afterSeq)
                     )
                     if (!response.optBoolean("registered", false)) {
+                        prefs.edit().putBoolean("serverPaired", false).apply()
                         // A controller can revoke pairing remotely. Stop media immediately on the next poll.
                         rtc?.dispose()
                         rtc = null
@@ -157,6 +186,7 @@ class MonitorService : Service() {
                         notifyState("Android端末の登録待ち：Webに8桁コードを入力")
                     } else {
                         val needsPairing = response.optBoolean("needsPairing", false)
+                        prefs.edit().putBoolean("serverPaired", !needsPairing).apply()
                         val codeActive = response.optBoolean("pairingCodeActive", false)
                         if (needsPairing) {
                             if (System.currentTimeMillis() - lastCodeRefresh > 8 * 60 * 1000L) {
@@ -214,7 +244,7 @@ class MonitorService : Service() {
             val response = api!!.call("device_begin", JSONObject().put("deviceId", id).put("deviceName", Build.MODEL ?: "Android"))
             secret = response.getString("deviceSecret")
             prefs.edit().putString("deviceId", id).putString("deviceSecret", secret)
-                .putInt("afterSeq", 0).apply()
+                .putBoolean("serverPaired", false).putInt("afterSeq", 0).apply()
             afterSeq = 0
             showPairingCode(response.optString("registrationCode"), id)
         } else {
@@ -378,6 +408,7 @@ class MonitorService : Service() {
         locationJob?.cancel()
         rtc?.dispose()
         rtc = null
+        prefs.edit().putBoolean("monitoringEnabled", false).apply()
         scope.cancel()
         super.onDestroy()
     }
