@@ -150,8 +150,13 @@ class MonitorService : Service() {
                         if (System.currentTimeMillis() - lastCodeRefresh > 8 * 60 * 1000L) refreshCode()
                         notifyState("Android端末の登録待ち：Webに8桁コードを入力")
                     } else {
+                        val needsPairing = response.optBoolean("needsPairing", false)
                         val codeActive = response.optBoolean("pairingCodeActive", false)
-                        if (!codeActive && (prefs.getString("registrationCode", "") ?: "").isNotBlank()) {
+                        if (needsPairing) {
+                            if (System.currentTimeMillis() - lastCodeRefresh > 8 * 60 * 1000L) {
+                                refreshCode()
+                            }
+                        } else if (!codeActive && (prefs.getString("registrationCode", "") ?: "").isNotBlank()) {
                             prefs.edit().remove("registrationCode").apply()
                             broadcastCode("", deviceId)
                         }
