@@ -7,8 +7,6 @@ on:
       - "web/**"
       - "gas/**"
       - ".github/workflows/**"
-      - "docs/**"
-      - "README.md"
   workflow_dispatch:
 permissions:
   contents: read
