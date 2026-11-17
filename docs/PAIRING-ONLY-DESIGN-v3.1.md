@@ -1,8 +1,8 @@
-# アカウント廃止・ペアリング方式への変更仕様 v3.1
+# アカウント不要・監視カメラ中心のシステム仕様 v3.2
 
 作成日：2026年11月17日  
 対象リポジトリ：a09848281-prog/web  
-適用範囲：v3.0仕様書のうち、アカウント認証・端末ペアリング・Web画面・GAS API・データベースに関する項目を本書で置き換える。
+適用範囲：v3.0仕様書を更新する現行仕様。ログイン・新規登録を含む旧アカウント方式は廃止する。
 
 ## 1. 変更の目的
 
@@ -69,6 +69,9 @@ controllerTokenは操作権限を持つ秘密情報である。個人用iPadのS
 
 追加API：
 - ack_command：Androidが受信した操作命令の実行結果をGASへ返す。
+- health：GASのバージョン、DB接続状態、必要シート・見出しを返す。
+- unpair_device：ペアリング済みcontrollerTokenをGAS側で失効させる。
+- disconnect時のbyeシグナル：Androidが次回GASポーリング時に対象RTCセッションを閉じる。
 
 ペアリング前のclaim_deviceを除き、Webからの操作APIはcontrollerTokenを要求する。Androidからの端末APIはdeviceSecretを要求する。
 
@@ -85,9 +88,15 @@ Signals、Settings、LocationHistory、SecurityLogは維持する。旧Users / S
 
 ## 6. データベース初期化の安全性
 
-setupDatabaseは既存シートを一括clearしない。既存の列見出しが一致する場合に不足している末尾列だけを追加する。既存見出しが異なる場合はデータ保護のためエラーを出し、初期化を中止する。
+setupDatabaseは既存シートを一括clearしない。既存の列見出しが一致する場合に不足している末尾列だけを追加する。既存見出しが異なる場合はデータ保護のためエラーを出し、初期化を中止する。さらに接続先スプレッドシートIDを Script Properties の `DB_SPREADSHEET_ID` に保存する。v3.2コードへ差し替えた後は、以前に実行済みでも setupDatabase を再実行する。GAS WebアプリからのDB接続は保存したIDを使って `openById()` で行う。
 
-## 7. ペアリング復旧
+## 7. ペアリング解除
+1. Web画面で対象端末を選択する。
+2. 「選択中の端末をペアリング解除」を実行する。
+3. GASはcontrollerTokenのハッシュを削除して旧トークンを無効化し、Devicesの状態をpendingに戻す。
+4. Androidは次回ポーリング時にRTCを終了し、必要に応じて新しい8桁コードを発行する。
+
+## 8. ペアリング復旧
 
 iPadのSafariデータが消えてcontrollerTokenを失った場合：
 1. Androidアプリを開く。
@@ -95,7 +104,7 @@ iPadのSafariデータが消えてcontrollerTokenを失った場合：
 3. 新しい8桁コードをiPadのWeb画面に入力する。
 4. 新しいcontrollerTokenが保存され、以前のトークンは無効になる。
 
-## 8. セキュリティ・運用上の制限
+## 9. セキュリティ・運用上の制限
 
 - コードを第三者に見せない。
 - スプレッドシートを一般公開しない。
@@ -106,7 +115,7 @@ iPadのSafariデータが消えてcontrollerTokenを失った場合：
 - WebRTCは引き続きGASを映像・音声の中継に使わない。
 - STUN/TURNを使用しない制約上、異なるネットワーク間の接続は保証しない。
 
-## 9. テスト必須項目
+## 10. テスト必須項目
 
 1. Android初回起動で端末ID・秘密情報・ペアリングコードが生成される。
 2. 正しいコードでペアリングするとcontrollerTokenが返り、Webに端末が保存される。
@@ -118,3 +127,7 @@ iPadのSafariデータが消えてcontrollerTokenを失った場合：
 8. 再ペアリング後、古いcontrollerTokenは使えない。
 9. CommandsがAndroidに届き、ack_commandによってdoneまたはfailedになる。
 10. 映像・音声・カメラ切替・音量・画質・位置情報・履歴を実機で確認する。
+11. GETヘルスチェックで `databaseReady:true` を確認する。
+12. Web起動時にGAS POST/iframe応答チェックが成功する。
+13. ペアリング解除でcontrollerTokenが失効し、Androidのカメラ・マイクが停止する。
+14. 360p/480p/720p/1080p設定が実際のキャプチャ解像度に反映される。
