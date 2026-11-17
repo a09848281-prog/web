@@ -29,6 +29,8 @@ class RtcEngine(
     private var videoTrack: VideoTrack? = null
     private var audioTrack: AudioTrack? = null
     private var frontCamera = false
+    private var currentQuality = "720"
+    private var currentDataMode = "standard"
     private var captureWidth = 1280
     private var captureHeight = 720
     private var captureFps = 24
@@ -195,7 +197,9 @@ class RtcEngine(
     }
 
     fun setQuality(quality: String, dataMode: String) {
-        val profile = profileFor(quality, dataMode)
+        currentQuality = quality
+        currentDataMode = dataMode
+        val profile = profileFor(currentQuality, currentDataMode)
         val camera = capturer
         if (camera != null &&
             (profile.width != captureWidth || profile.height != captureHeight || profile.fps != captureFps)
