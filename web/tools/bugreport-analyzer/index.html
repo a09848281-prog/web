@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101827">
+<title>Android Bugreport Analyzer</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#151f32;--line:#2b3b55;--text:#eef4ff;--muted:#9aabc4;--blue:#8db5ff;--red:#ff8585;--yellow:#ffd27c;--green:#78dfb2}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#1a2b49,var(--bg) 65%);color:var(--text);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:1100px;margin:auto;padding:22px 15px 55px}.hero{padding:18px 0 20px}.eyebrow{color:var(--blue);font-weight:800;letter-spacing:.13em;font-size:.78rem}.hero h1{font-size:clamp(1.8rem,5vw,2.8rem);line-height:1.1;margin:9px 0}.muted,small{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:14px}.card{background:#151f32ed;border:1px solid var(--line);border-radius:17px;padding:18px;min-width:0}.card h2{font-size:1.1rem;margin:0 0 12px}.drop{border:2px dashed #536987;border-radius:14px;padding:25px 14px;text-align:center;background:#0d1728}.drop.drag{border-color:var(--blue);background:#172b49}.btn{border:0;border-radius:10px;padding:11px 15px;background:#8db5ff;color:#091426;font-weight:800;font:inherit;cursor:pointer}.btn.secondary{background:#263a59;color:var(--text);border:1px solid #49617f}.btn:disabled{opacity:.5}input[type=file]{max-width:100%;margin:10px 0}.status{padding:11px;border-radius:10px;background:#0c1728;border:1px solid var(--line);color:var(--muted);overflow-wrap:anywhere}.status.good{color:var(--green)}.status.warn{color:var(--yellow)}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.stat{background:#0c1728;border:1px solid var(--line);border-radius:11px;padding:11px}.stat b{display:block;font-size:1.55rem}.stat span{font-size:.8rem;color:var(--muted)}.findings{display:grid;gap:10px}.finding{border:1px solid var(--line);border-left:4px solid var(--yellow);background:#0d1728;border-radius:10px;padding:12px;min-width:0}.finding.high{border-left-color:var(--red)}.finding.info{border-left-color:var(--blue)}.finding h3{margin:0 0 5px;font-size:1rem}.finding p{margin:5px 0}.tag{display:inline-block;font-size:.75rem;border-radius:20px;padding:2px 8px;background:#293c59;color:#dbe8ff;margin-right:5px}.log{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;background:#080f1b;border:1px solid var(--line);border-radius:9px;padding:10px;font:12px/1.5 ui-monospace,monospace}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.hidden{display:none!important}label{display:block;margin:9px 0}.footer{margin-top:18px;color:var(--muted);font-size:.83rem}.notice{border-left:3px solid var(--yellow);padding:9px 12px;background:#30281755;border-radius:0 8px 8px 0}.filelist{max-height:170px;overflow:auto;font-size:.84rem;color:var(--muted)}button:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+</style>
+</head>
+<body><main>
+<header class="hero"><div class="eyebrow">ANDROID DIAGNOSTICS · LOCAL ANALYSIS</div><h1>🛠️ Android バグレポート解析</h1><p class="muted">Androidのバグレポート ZIP / TXT を読み込み、クラッシュ・ANR・カメラ・マイク・WebRTC関連の記録を探します。</p></header>
+<section class="card">
+<h2>📂 バグレポートを読み込む</h2>
+<div class="drop" id="drop"><b>ZIPまたはTXTファイルを選択</b><br><small>ここにファイルをドロップすることもできます</small><br><input id="file" type="file" accept=".zip,.txt,.log,.bugreport,text/plain,application/zip"><div id="status" class="status">ファイルは端末内のブラウザで解析します。外部サーバーには送信しません。</div></div>
+<div class="toolbar"><button id="clear" class="btn secondary" disabled>解析結果をクリア</button><button id="save" class="btn secondary" disabled>解析結果をTXT保存</button></div>
+<div class="notice small">プライバシー：ファイル内容をネットワーク送信する処理はありません。ただし、バグレポート自体には端末名・アプリ情報・Wi-Fi情報・通知内容などが含まれる場合があります。解析結果を共有する前に個人情報を確認してください。</div>
+</section>
+<section id="results" class="hidden">
+<div class="card" style="margin-top:14px"><h2>📊 解析サマリー</h2><div class="stats"><div class="stat"><b id="crashN">0</b><span>クラッシュ候補</span></div><div class="stat"><b id="anrN">0</b><span>ANR候補</span></div><div class="stat"><b id="matchN">0</b><span>関連ログ行</span></div></div><p id="summary" class="status" style="margin-top:12px"></p><p id="coverage" class="muted small"></p></div>
+<div class="grid" style="margin-top:14px">
+<section class="card"><h2>🚨 検出した問題</h2><div id="findings" class="findings"></div></section>
+<section class="card"><h2>📁 ZIP内の解析対象</h2><div id="files" class="filelist"></div><p class="muted small">容量の大きいバイナリや画像などは読み飛ばします。</p></section>
+</div>
+<section class="card" style="margin-top:14px"><h2>🔎 関連ログ</h2><p class="muted small">アプリクラッシュ、ネイティブクラッシュ、カメラ、マイク、WebRTCなどのキーワードを含む行です。</p><div class="toolbar"><input id="search" type="search" placeholder="ログ内を検索（例：AndroidRuntime）" style="flex:1;min-width:190px;background:#0c1728;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:10px"><button id="searchBtn" class="btn secondary">検索</button></div><div id="loglines" class="log">まだ解析されていません。</div></section>
+</section>
+<p class="footer">GitHub Pages · HTML / CSS / JavaScript only · ファイルはブラウザ内で処理</p>
+</main>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id);
+let reportText='',reportName='',findings=[],matches=[],fileNames=[];
+const MAX_FILE=150*1024*1024,MAX_TEXT=90*1024*1024;
+const status=(s,c='')=>{$('status').className='status '+c;$('status').textContent=s};
+function decode(bytes){try{return new TextDecoder('utf-8').decode(bytes)}catch{return new TextDecoder('windows-1252').decode(bytes)}}
+function u16(v,p){return v.getUint16(p,true)}function u32(v,p){return v.getUint32(p,true)}
+async function unzip(buf){
+ const b=new Uint8Array(buf),v=new DataView(buf);let eocd=-1;
+ for(let p=Math.max(0,b.length-65557);p<=b.length-22;p++){if(u32(v,p)===0x06054b50)eocd=p}
+ if(eocd<0)throw Error('ZIPの終端情報が見つかりません。ZIP形式のバグレポートか確認してください。');
+ const count=u16(v,eocd+10),cdSize=u32(v,eocd+12),cdOff=u32(v,eocd+16);
+ if(count===0xffff||cdOff===0xffffffff||cdSize===0xffffffff)throw Error('ZIP64形式は現在未対応です。通常のAndroidバグレポートZIPを使用してください。');
+ if(count>20000||cdOff+cdSize>b.length)throw Error('ZIPの構造が不正、または解析対象が多すぎます。');
+ const out=[];let p=cdOff,total=0;
+ for(let i=0;i<count;i++){
+  if(p+46>b.length||u32(v,p)!==0x02014b50)break;
+  const method=u16(v,p+10),csize=u32(v,p+20),usize=u32(v,p+24),nl=u16(v,p+28),el=u16(v,p+30),cl=u16(v,p+32),off=u32(v,p+42);
+  const name=decode(b.slice(p+46,p+46+nl));p+=46+nl+el+cl;
+  if(!name||name.endsWith('/')||usize===0||usize>MAX_TEXT||total+usize>MAX_TEXT)continue;
+  const low=name.toLowerCase();
+  const likely=/logcat|dumpstate|bugreport|anr|tombstone|crash|event.?log|kernel|dropbox|trace|dumpsys/.test(low)||/\.(txt|log|trace)$/.test(low);
+  if(!likely)continue;
+  if(off+30>b.length||u32(v,off)!==0x04034b50)continue;
+  const lnl=u16(v,off+26),lel=u16(v,off+28),start=off+30+lnl+lel,end=start+csize;
+  if(end>b.length)continue;
+  let data=b.slice(start,end);
+  if(method===8){if(typeof DecompressionStream==='undefined')throw Error('このブラウザはZIP展開に必要な機能に対応していません。Chromeの最新版でお試しください。');const ds=new DecompressionStream('deflate-raw');const stream=new Blob([data]).stream().pipeThrough(ds);data=new Uint8Array(await new Response(stream).arrayBuffer())}
+  else if(method!==0)continue;
+  if(data.length>MAX_TEXT)continue;
+  const text=decode(data);if(text.includes('\u0000')&&text.length>100)continue;
+  out.push({name,text});total+=data.length;
+ }
+ if(!out.length)throw Error('解析できるログファイルが見つかりません。TXTログを直接選択してお試しください。');
+ return out;
+}
+const rules=[
+ {id:'fatal',re:/FATAL EXCEPTION|AndroidRuntime.*E\//i,title:'Androidアプリの例外終了',level:'high',why:'Java / Kotlin側で未処理例外が発生した可能性があります。',next:'該当箇所の例外名と at ... のスタックトレースを確認します。'},
+ {id:'native',re:/Fatal signal\s+\d+|signal \d+ \(SIG(SEGV|ABRT|BUS|ILL)/i,title:'ネイティブクラッシュ',level:'high',why:'C/C++などのネイティブ処理が異常終了した可能性があります。try/catchでは捕捉できない場合があります。',next:'tombstone、ABI、クラッシュした.so名、backtraceを確認します。'},
+ {id:'anr',re:/ANR in |Application Not Responding|am_anr/i,title:'ANR（アプリ応答なし）',level:'high',why:'アプリのメインスレッドなどが長時間応答しなかった可能性があります。',next:'ANR tracesのmainスレッドとブロック元を確認します。'},
+ {id:'camera',re:/CameraService|CameraProvider|CameraDevice|CameraAccessException|camera.*(fail|error|disconnect)|Failed to open camera/i,title:'カメラ関連のエラー',level:'info',why:'カメラ権限、他アプリとの競合、Camera HAL、端末側の制約などが考えられます。',next:'エラー直前の権限・カメラopen/close・CameraServiceログを確認します。'},
+ {id:'audio',re:/AudioRecord|AudioFlinger|AAudio|audio.*(fail|error)|RECORD_AUDIO/i,title:'マイク・音声関連のエラー',level:'info',why:'録音権限、AudioRecord初期化、音声デバイス競合などが考えられます。',next:'AudioRecordの初期化結果、権限、サンプリング設定を確認します。'},
+ {id:'webrtc',re:/libwebrtc|WebRTC|PeerConnection|EglBase|VideoCapturer|org\.webrtc/i,title:'WebRTC関連ログ',level:'info',why:'WebRTCの接続・映像取得・音声処理に関連するログが含まれています。これだけでは異常とは限りません。',next:'クラッシュ時刻付近の前後ログと、ICE/PeerConnectionの状態を照合します。'},
+ {id:'oom',re:/OutOfMemoryError|lowmemorykiller|lmkd.*kill|Killing .* adj/i,title:'メモリ不足・プロセス終了の候補',level:'high',why:'メモリ不足やOSのプロセス管理によりアプリが終了した可能性があります。',next:'終了時刻付近のメモリ量、lmkd、OutOfMemoryErrorを確認します。'},
+ {id:'perm',re:/Permission Denial|SecurityException|not allowed to (start|access)|denied.*permission/i,title:'権限・OS制限のエラー',level:'info',why:'必要な権限がない、またはAndroidのバックグラウンド実行制限に該当した可能性があります。',next:'例外行に記載された権限名とAndroid 13の実行条件を確認します。'}
+];
+function analyze(entries){
+ reportText=entries.map(x=>'===== '+x.name+' =====\n'+x.text).join('\n');fileNames=entries.map(x=>x.name);
+ const lines=reportText.split(/\r?\n/),seen=new Set();findings=[];matches=[];
+ const appHints=/remote.?camera|surveillance|monitor|camera|webrtc|org\.[\w.]+/i;
+ for(let i=0;i<lines.length;i++){
+  const line=lines[i];for(const r of rules){if(r.re.test(line)){const key=r.id+'|'+line.slice(0,180);if(!seen.has(key)){seen.add(key);let context=lines.slice(Math.max(0,i-2),Math.min(lines.length,i+4)).join('\n');findings.push({...r,line:i+1,context:context.slice(0,1600),app:appHints.test(context)});}if(r.id==='fatal'||r.id==='native'||r.id==='anr'||r.id==='camera'||r.id==='audio'||r.id==='webrtc'||r.id==='oom'||r.id==='perm')matches.push({n:i+1,t:line});}}
+ }
+ const crash=findings.filter(x=>['fatal','native','oom'].includes(x.id)).length,anr=findings.filter(x=>x.id==='anr').length;
+ $('crashN').textContent=crash;$('anrN').textContent=anr;$('matchN').textContent=matches.length;
+ $('summary').textContent=crash||anr?'クラッシュまたはANRの候補を検出しました。該当時刻と前後のログを確認してください。':'明確なクラッシュ行は見つかりませんでした。ログが含まれていないか、取得時点でログが残っていない可能性があります。';
+ $('coverage').textContent='解析したログファイル '+entries.length+' 件 / テキスト '+Math.round(reportText.length/1024)+' KB。キーワード検出は候補抽出であり、確定診断ではありません。';
+ $('files').textContent=fileNames.join('\n');
+ $('findings').innerHTML=findings.length?findings.slice(0,100).map(f=>'<article class="finding '+(f.level==='high'?'high':'info')+'"><span class="tag">'+(f.level==='high'?'要確認':'参考')+'</span><span class="tag">行 '+f.line+'</span><h3>'+esc(f.title)+'</h3><p>'+esc(f.why)+'</p><p><b>次に確認：</b>'+esc(f.next)+'</p><details><summary>該当ログ前後を表示</summary><pre class="log">'+esc(f.context)+'</pre></details></article>').join(''):'<p class="status">既知のクラッシュ・ANRキーワードは見つかりませんでした。下のログ検索を利用してください。</p>';
+ renderMatches(matches);
+ $('results').classList.remove('hidden');$('save').disabled=false;$('clear').disabled=false;
+}
+function renderMatches(list){$('loglines').textContent=list.length?list.slice(0,500).map(x=>'['+x.n+'] '+x.t).join('\n'):'一致するログ行はありません。';}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function load(file){if(!file)return;if(file.size>MAX_FILE){status('ファイルが150MBを超えています。より小さいレポートを選択してください。','warn');return}reportName=file.name;status('読み込み中… ファイルはこの端末内で処理しています。');try{let entries;if(/\.zip$/i.test(file.name)||file.type==='application/zip'){entries=await unzip(await file.arrayBuffer())}else{const text=await file.text();entries=[{name:file.name,text}]}analyze(entries);status('解析が完了しました。外部送信は行っていません。','good')}catch(e){status('解析できませんでした：'+e.message,'warn')}}
+$('file').addEventListener('change',e=>load(e.target.files[0]));
+const drop=$('drop');['dragenter','dragover'].forEach(n=>drop.addEventListener(n,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(n=>drop.addEventListener(n,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>load(e.dataTransfer.files[0]));
+$('searchBtn').addEventListener('click',()=>{const q=$('search').value.trim().toLowerCase();if(!q){renderMatches(matches);return}const found=[];reportText.split(/\r?\n/).forEach((t,i)=>{if(t.toLowerCase().includes(q))found.push({n:i+1,t})});renderMatches(found)});
+$('search').addEventListener('keydown',e=>{if(e.key==='Enter')$('searchBtn').click()});
+$('clear').addEventListener('click',()=>{reportText='';findings=[];matches=[];fileNames=[];$('file').value='';$('results').classList.add('hidden');$('save').disabled=true;$('clear').disabled=true;status('解析結果をクリアしました。')});
+$('save').addEventListener('click',()=>{const body=['Android Bugreport Analyzer','ファイル：'+reportName,'解析日時：'+new Date().toLocaleString(),'','検出した問題：',...findings.map(f=>f.title+' / 行 '+f.line+'\n'+f.why+'\n'+f.context),'','関連ログ：',...matches.map(x=>'['+x.n+'] '+x.t)];const a=document.createElement('a');const u=URL.createObjectURL(new Blob([body.join('\n')],{type:'text/plain;charset=utf-8'}));a.href=u;a.download='bugreport-analysis.txt';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)});
+})();
+</script></body></html>
