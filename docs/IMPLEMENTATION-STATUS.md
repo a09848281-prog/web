@@ -1,4 +1,4 @@
-# 実装状況 v3.2
+# 実装状況 v3.3.0
 
 ## 現行方式
 - Web：アカウント登録・ログイン画面を廃止。Androidの期限付き8桁コードによるペアリングを入口に変更。
@@ -13,6 +13,9 @@
 - WebRTC：切断シグナルを追加し、プッシュトゥトーク中は受信音声をミュート。
 - Android：画質設定をカメラ解像度・フレームレート・最大ビットレートへ反映。
 - Android：カメラ・マイク・位置情報のForeground Service、GASポーリング、WebRTCの構成を維持。
+- GAS/Web：HtmlServiceの入れ子iframeから最上位GitHub Pagesへ応答を返すPOSTブリッジに修正。
+- Android：通知欄の「待機を停止」でForeground Service、GASポーリング、位置情報処理、WebRTCを停止。
+- Android：GASポーリングでサーバーのペアリング状態を確認し、ローカル端末IDだけで「ペアリング済み」と表示しない。
 
 ## CIで確認する項目
 - Web JavaScript構文検査
@@ -21,7 +24,13 @@
 - Android Gradle debug APKビルド
 - GitHub Actions artifact生成
 
-## CI・公開確認済み（2026-11-17）
+## CI・公開確認済み v3.3.0（2026-11-17）
+- Build run：成功（Web/GAS構文、HTML/API整合性、追加チェック、Android Gradle debug APK、Artifact upload）
+- Build：https://github.com/a09848281-prog/web/actions/runs/44095787786
+- APK Artifact：`remote-camera-debug-apk-v3.3`（Artifact ID `14333203381`）
+- GitHub Pages deploy：成功 https://github.com/a09848281-prog/web/actions/runs/44095726255
+
+## 以前のv3.2.0ビルド記録（2026-11-17）
 - v3.2.0 Android debug build / source checks：成功
 - GitHub Actions：https://github.com/a09848281-prog/web/actions/runs/44091426011
 - GitHub Pages deploy：成功
