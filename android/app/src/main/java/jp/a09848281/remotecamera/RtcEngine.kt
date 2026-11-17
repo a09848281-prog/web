@@ -40,11 +40,12 @@ class RtcEngine(
     )
 
     private fun profileFor(quality: String, dataMode: String): VideoProfile {
+        // Conservative default for mid-range Android 13 devices.
         val base = when (quality) {
             "360" -> VideoProfile(640, 360, 15, 350000)
-            "480" -> VideoProfile(854, 480, 20, 650000)
-            "1080" -> VideoProfile(1920, 1080, 30, 2200000)
-            else -> VideoProfile(1280, 720, 24, 1200000)
+            "480" -> VideoProfile(640, 480, 15, 550000)
+            "1080" -> VideoProfile(1920, 1080, 24, 1800000)
+            else -> VideoProfile(640, 480, 15, 550000)
         }
         return when (dataMode) {
             "ultra" -> VideoProfile(640, 360, 10, 280000)
@@ -82,7 +83,18 @@ class RtcEngine(
         captureWidth = profile.width
         captureHeight = profile.height
         captureFps = profile.fps
-        capturer!!.startCapture(profile.width, profile.height, profile.fps)
+        try {
+            capturer!!.startCapture(profile.width, profile.height, profile.fps)
+        } catch (first: Exception) {
+            Log.w("RemoteCameraRTC", "Preferred camera format failed; retrying conservative VGA mode", first)
+            try { capturer?.dispose() } catch (_: Exception) {}
+            capturer = enumerator.createCapturer(selected, null) ?: throw first
+            capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
+            capturer!!.startCapture(640, 480, 15)
+            captureWidth = 640
+            captureHeight = 480
+            captureFps = 15
+        }
         videoTrack = factory!!.createVideoTrack("remote-camera-video", videoSource).apply { setEnabled(true) }
         audioSource = factory!!.createAudioSource(MediaConstraints())
         audioTrack = factory!!.createAudioTrack("remote-camera-audio", audioSource).apply { setEnabled(true) }
@@ -160,8 +172,13 @@ class RtcEngine(
                 override fun onCreateFailure(error: String) {}
             }, SessionDescription(SessionDescription.Type.OFFER, sdp))
         } catch (e: Exception) {
-            Log.e("RemoteCameraRTC", "Offer processing failed", e)
-            onState("WebRTC開始失敗: " + (e.message ?: "不明"))
+            Log.e("RemoteCameraRTC", "Offer processing failed; cleaning partial RTC state", e)
+            try { peers.remove(sessionId)?.close() } catch (_: Exception) {}
+            try { videoSenders.remove(sessionId) } catch (_: Exception) {}
+            if (peers.isEmpty()) {
+                try { stopMedia() } catch (_: Exception) {}
+            }
+            onState("WebRTC開始失敗：" + (e.message ?: "不明") + "。アプリの待機は継続します")
             scope.launch(Dispatchers.IO) {
                 try {
                     api.call("send_signal", JSONObject()
