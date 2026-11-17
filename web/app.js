@@ -9,6 +9,8 @@ const S = {
   device: null,
   pc: null,
   mic: null,
+  remoteAudioTracks: [],
+  pttActive: false,
   session: "",
   seq: 0,
   map: null,
@@ -69,7 +71,11 @@ function api(action, data = {}) {
     const frame = document.createElement("iframe");
     const form = document.createElement("form");
     frame.name = "gas_" + id;
-    frame.hidden = true;
+    frame.title = "GAS response";
+    frame.tabIndex = -1;
+    frame.setAttribute("aria-hidden", "true");
+    // Keep the iframe renderable: iOS Safari can be unreliable with hidden form targets.
+    frame.style.cssText = "position:fixed;width:1px;height:1px;left:-2px;top:-2px;opacity:0;pointer-events:none;border:0";
     form.hidden = true;
     form.method = "POST";
     form.action = S.cfg.gasUrl;
@@ -146,7 +152,7 @@ function renderDevices() {
   });
 }
 function setControlsEnabled(enabled) {
-  ["connect", "locate", "saveSettings", "history", "deleteHistory"].forEach(id => {
+  ["connect", "locate", "saveSettings", "history", "deleteHistory", "unpair"].forEach(id => {
     $(id).disabled = !enabled;
   });
   $("connect").disabled = !enabled || !!S.pc;
@@ -255,6 +261,10 @@ async function connect() {
       const tracks = event.streams[0] ? event.streams[0].getTracks() : [event.track];
       tracks.forEach(track => {
         if (!remote.getTracks().some(existing => existing.id === track.id)) remote.addTrack(track);
+        if (track.kind === "audio" && !S.remoteAudioTracks.some(existing => existing.id === track.id)) {
+          track.enabled = !S.pttActive;
+          S.remoteAudioTracks.push(track);
+        }
       });
       $("placeholder").classList.add("hidden");
       $("remoteVideo").play().catch(() => toast("映像・音声を再生するには画面をタップしてください。"));
@@ -312,6 +322,14 @@ async function pollAnswers() {
 }
 async function disconnect(sendCommand = true) {
   if (sendCommand && S.pc && S.device) {
+    const signal = {
+      controllerToken: S.device.controllerToken,
+      deviceId: S.device.deviceId,
+      sessionId: S.session,
+      recipient: "device",
+      kind: "bye"
+    };
+    api("send_signal", signal).catch(() => {});
     api("send_command", {
       controllerToken: S.device.controllerToken,
       deviceId: S.device.deviceId,
@@ -325,6 +343,8 @@ async function disconnect(sendCommand = true) {
   try { if (old) old.close(); } catch (_) {}
   if (S.mic) S.mic.getTracks().forEach(track => track.stop());
   S.mic = null;
+  S.pttActive = false;
+  S.remoteAudioTracks = [];
   $("remoteVideo").srcObject = null;
   $("placeholder").classList.remove("hidden");
   $("connect").disabled = !S.device;
@@ -340,11 +360,13 @@ async function disconnect(sendCommand = true) {
 }
 function ptt(enabled) {
   const track = S.mic && S.mic.getAudioTracks()[0];
-  if (track) {
-    track.enabled = enabled;
-    $("ptt").classList.toggle("active", enabled);
-    $("ptt").textContent = enabled ? "送話中…" : "押している間だけ話す";
-  }
+  if (!track) return;
+  S.pttActive = enabled;
+  track.enabled = enabled;
+  // Half-duplex: mute the Android return audio while sending PTT audio.
+  S.remoteAudioTracks.forEach(remoteTrack => { remoteTrack.enabled = !enabled; });
+  $("ptt").classList.toggle("active", enabled);
+  $("ptt").textContent = enabled ? "送話中…" : "押している間だけ話す";
 }
 async function loadSettings() {
   if (!S.device) return;
@@ -375,6 +397,12 @@ async function saveSettings() {
     deviceId: S.device.deviceId,
     settings
   });
+  await api("send_command", {
+    controllerToken: S.device.controllerToken,
+    deviceId: S.device.deviceId,
+    command: "quality",
+    payload: { quality: settings.quality, dataMode: settings.dataMode }
+  });
   toast("設定を保存しました。");
 }
 async function command(name, payload = {}) {
@@ -386,6 +414,30 @@ async function command(name, payload = {}) {
     payload
   });
   toast("Androidへ命令しました。");
+}
+
+async function unpairSelectedDevice() {
+  if (!S.device) return;
+  if (!confirm("このAndroid端末とiPadのペアリングを解除します。Android側の監視映像・音声も次回通信時に停止します。よろしいですか？")) return;
+  const selected = S.device;
+  $("unpair").disabled = true;
+  try {
+    await api("unpair_device", {
+      controllerToken: selected.controllerToken,
+      deviceId: selected.deviceId
+    });
+    await disconnect(false);
+    S.devices = S.devices.filter(device => device.deviceId !== selected.deviceId);
+    saveDevices();
+    localStorage.removeItem(SELECTED_KEY);
+    S.device = null;
+    refreshDeviceList();
+    status("ペアリング解除済み");
+    toast("ペアリングを解除しました。");
+  } catch (error) {
+    toast("ペアリング解除失敗: " + error.message);
+    $("unpair").disabled = false;
+  }
 }
 
 async function loadHistory() {
@@ -477,6 +529,7 @@ async function deleteHistory() {
 document.addEventListener("DOMContentLoaded", async () => {
   $("refresh").addEventListener("click", refreshDeviceList);
   $("pair").addEventListener("click", () => $("pairDialog").showModal());
+  $("unpair").addEventListener("click", () => unpairSelectedDevice());
   $("claim").addEventListener("click", claimDevice);
   $("connect").addEventListener("click", connect);
   $("disconnect").addEventListener("click", () => disconnect(true));
@@ -503,11 +556,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadConfig();
     S.devices = readDevices();
     refreshDeviceList();
-    if (S.device) {
-      status("ペアリング済み");
-      setControlsEnabled(true);
+    try {
+      const health = await api("health");
+      if (!health.databaseReady) {
+        $("pair").disabled = true;
+        status("GAS接続済み・DB未設定");
+        toast(health.message || "GASのsetupDatabase()を実行し、最新バージョンをデプロイしてください。");
+      } else {
+        $("pair").disabled = false;
+        status(S.device ? "ペアリング済み" : "GAS接続済み・端末未登録", true);
+      }
+    } catch (healthError) {
+      $("pair").disabled = true;
+      status("GAS応答なし");
+      toast("GASへのPOST通信を確認できません。Code.gsの更新とウェブアプリの再デプロイを確認してください。");
+      console.error("GAS health check failed", healthError);
     }
+    if (S.device) setControlsEnabled(true);
   } catch (error) {
+    $("pair").disabled = true;
     toast(error.message);
     status("設定エラー");
   }
