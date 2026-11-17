@@ -235,10 +235,10 @@ function deviceBegin_(r) {
   const secret = randomToken_();
   const code = newCode_();
   const expiry = new Date(Date.now() + CODE_MINUTES * 60000);
-  checkDeviceBeginRate_();
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
+    checkDeviceBeginRate_();
     if (find_("Devices", 0, id)) throw Error("端末IDが既に登録されています。アプリのデータを確認してください。");
     append_("Devices", [id, "", name, hash_(secret), hash_(code), expiry, now_(), "", "", "pending", ""]);
   } finally {
@@ -269,11 +269,11 @@ function refreshDeviceCode_(r) {
 function claimDevice_(r) {
   const code = String(r.code || "").trim();
   if (!/^\d{8}$/.test(code)) throw Error("登録コードは8桁の数字です。");
-  checkPairRate_();
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   let deviceId = "";
   try {
+    checkPairRate_();
     const data = rows_("Devices");
     let hit = null;
     for (let i = 0; i < data.length; i++) {
