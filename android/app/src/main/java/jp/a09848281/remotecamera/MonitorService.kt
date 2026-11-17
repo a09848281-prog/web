@@ -55,12 +55,17 @@ class MonitorService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action
+        val startIntent = intent
+        if (startIntent == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        val action = startIntent.action
         if (action != ACTION_START && action != ACTION_REFRESH_CODE) {
             stopSelf()
             return START_NOT_STICKY
         }
-        gasUrl = intent.getStringExtra(EXTRA_GAS_URL)
+        gasUrl = startIntent.getStringExtra(EXTRA_GAS_URL)
             ?: prefs.getString("gasUrl", "")
             ?: ""
         if (!gasUrl.startsWith("https://script.google.com/")) {
