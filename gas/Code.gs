@@ -320,7 +320,8 @@ function devicePoll_(r) {
     try { settings = Object.assign(settings, JSON.parse(settingsHit.v[1] || "{}")); } catch (err) {}
   }
   return {
-    ok: true, registered: true, commands: commands, signals: signals,
+    ok: true, registered: true, pairingCodeActive: !!d.v[4] && new Date(d.v[5]).getTime() > Date.now(),
+    commands: commands, signals: signals,
     latestSeq: signals.reduce(function(max, signal) { return Math.max(max, signal.seq); }, after),
     settings: settings
   };
