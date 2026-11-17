@@ -6,6 +6,7 @@ on:
       - "android/**"
       - "web/**"
       - "gas/**"
+      - "docs/**"
       - ".github/workflows/**"
   workflow_dispatch:
 permissions:
@@ -15,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   android-build:
-    name: Android debug APK
+    name: Android debug APK and source checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,12 +31,36 @@ jobs:
         run: node --check web/app.js
       - name: Check GAS JavaScript syntax
         run: cp gas/Code.gs /tmp/gas-check.js && node --check /tmp/gas-check.js
+      - name: Check Web IDs and API action compatibility
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('web/index.html', 'utf8');
+          const app = fs.readFileSync('web/app.js', 'utf8');
+          const gas = fs.readFileSync('gas/Code.gs', 'utf8');
+          const android = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/MonitorService.kt', 'utf8');
+          const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(x => x[1]);
+          const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+          if (dupes.length) throw new Error('Duplicate HTML IDs: ' + [...new Set(dupes)].join(', '));
+          const refs = [...app.matchAll(/\$\(["']([^"']+)["']\)/g)].map(x => x[1]);
+          const missing = [...new Set(refs.filter(id => !ids.includes(id)))];
+          if (missing.length) throw new Error('Missing HTML IDs: ' + missing.join(', '));
+          const gasActions = new Set([...gas.matchAll(/case\s+["']([a-z_]+)["']\s*:/g)].map(x => x[1]));
+          const webActions = new Set([...app.matchAll(/\bapi\(["']([a-z_]+)["']/g)].map(x => x[1]));
+          const androidActions = new Set([...android.matchAll(/\.call\(["']([a-z_]+)["']/g)].map(x => x[1]));
+          const missingActions = [...new Set([...webActions, ...androidActions])].filter(x => !gasActions.has(x));
+          if (missingActions.length) throw new Error('Missing GAS API actions: ' + missingActions.join(', '));
+          if (/function\s+(register_|login_|logout_|me_)\s*\(/.test(gas) || /authForm|switchAuth|authSubmit/.test(app + html)) {
+            throw new Error('Legacy account UI/API remains in active sources.');
+          }
+          console.log('HTML IDs, Web/GAS/Android API actions, and account-free entry point OK.');
+          NODE
       - name: Build Android debug APK
         working-directory: android
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-camera-debug-apk
+          name: remote-camera-debug-apk-v3.1
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
