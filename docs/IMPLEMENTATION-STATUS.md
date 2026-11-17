@@ -1,29 +1,28 @@
-# 実装状況
+# 実装状況 v3.1
 
-## リポジトリ内に用意したもの
-- Web：ログイン/新規登録、端末一覧、ペアリング、接続UI、映像表示、PTT、音量/画質/カメラ命令、地図・位置履歴UI
-- GAS：スプレッドシート初期化、PBKDF2-HMAC-SHA256パスワードハッシュ、ログインセッション、ワンタイム端末登録、接続命令、SDPシグナリング、設定と位置履歴API
-- Android：Kotlinプロジェクト、権限画面、Foreground Service、端末登録、GASポーリング、WebRTCカメラ/音声トラック
-- GitHub Actions：Web/GAS JavaScript構文検査、Android debug APKビルド、GitHub Pages公開用ワークフロー
+## 現行方式
+- Web：アカウント登録・ログイン画面を廃止。Androidの期限付き8桁コードによるペアリングを入口に変更。
+- Web：ペアリングした端末の controllerToken をブラウザーのローカルストレージに保存し、端末ごとに操作。
+- GAS：Users / Sessions を使った認証APIを廃止。Devices内のAndroid秘密情報と controllerToken ハッシュで端末単位に認証。
+- GAS：既存シートのデータを消去しないスキーマ更新。旧Users / Sessionsシートは残すが利用しない。
+- GAS：ペアリングコードは10分有効・一回使用。試行回数制限を追加。
+- Android：ペアリングコード再発行ボタン、ペアリング後のコード表示クリア、リモート命令のACK送信を追加。
+- Android：カメラ・マイク・位置情報のForeground Service、GASポーリング、WebRTCの構成を維持。
 
-## CI確認済み
-2026-11-17、コミット 64fd03bc1e0086294f877a1863d1f492ca547a52 に対するActionsで次を確認しました。
-- Web JavaScript構文検査：成功
-- GAS JavaScript構文検査：成功
-- Android Gradle debug APKビルド：成功
-- debug APK Artifactアップロード：成功
+## CIで確認する項目
+- Web JavaScript構文検査
+- GAS JavaScript構文検査
+- HTMLのIDとJavaScript参照整合性
+- Android Gradle debug APKビルド
+- GitHub Actions artifact生成
 
-GitHub Pages公開は、リポジトリSettings → PagesでSourceをGitHub Actionsに設定していないため初回実行が失敗しました。設定後にDeploy Web Pagesワークフローを実行してください。
+## 実機未検証
+- Google Apps Script実デプロイ環境でのWeb iframe応答
+- iPad Safariからのペアリング・WebRTC接続
+- Android 13でのForeground Service、カメラ・マイク、位置情報
+- 位置情報の蓄積・削除・通信再試行
+- STUN/TURNなしでの異なるネットワーク間接続
+- 長時間待機・発熱・バッテリー消費
 
-## ユーザー側で必要な作業
-1. Google Sheet作成、GAS貼付け、setupDatabase実行、Webアプリデプロイ
-2. web/config.jsonにGAS URLを設定
-3. GitHub Pages SourceをGitHub Actionsに変更
-4. debug APKをAndroid 13端末へインストール
-5. Android 13とiPad Safariで接続、音声、位置情報の実機検証
-
-## 未検証・制限
-- STUN/TURNなしのためICE接続は限定的。異なるネットワーク間で接続しない場合があります。
-- Androidの強制停止、再起動、権限取消、メーカー省電力制御で待機が終了・遅延する場合があります。
-- 多人数同時接続の個別切断、音声ハウリング防止、機種別広角カメラ選択、完全な再接続、長時間負荷試験は未検証です。
-- APKはdebug署名です。正式なRelease署名・SHA-256配布は署名鍵を安全に設定した後に行います。
+## 制限
+STUN/TURNなしでは同じLAN外の接続成功を保証しません。Androidの強制停止、OS再起動、権限取消、メーカー省電力制御で待機が停止・遅延する場合があります。APKはdebug署名であり、正式Release署名ではありません。
