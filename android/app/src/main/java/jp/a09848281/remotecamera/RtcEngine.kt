@@ -29,6 +29,28 @@ class RtcEngine(
     private var videoTrack: VideoTrack? = null
     private var audioTrack: AudioTrack? = null
     private var frontCamera = false
+    private var captureWidth = 1280
+    private var captureHeight = 720
+    private var captureFps = 24
+
+    private data class VideoProfile(
+        val width: Int, val height: Int, val fps: Int, val bitrate: Int
+    )
+
+    private fun profileFor(quality: String, dataMode: String): VideoProfile {
+        val base = when (quality) {
+            "360" -> VideoProfile(640, 360, 15, 350000)
+            "480" -> VideoProfile(854, 480, 20, 650000)
+            "1080" -> VideoProfile(1920, 1080, 30, 2200000)
+            else -> VideoProfile(1280, 720, 24, 1200000)
+        }
+        return when (dataMode) {
+            "ultra" -> VideoProfile(640, 360, 10, 280000)
+            "save" -> VideoProfile(640, 360, 15, 550000)
+            "high" -> base.copy(fps = 30, bitrate = 2400000)
+            else -> base
+        }
+    }
 
     @Synchronized
     private fun ensureMedia() {
@@ -54,7 +76,11 @@ class RtcEngine(
         capturer = enumerator.createCapturer(selected, null) ?: error("カメラを開けません。")
         helper = SurfaceTextureHelper.create("RemoteCameraCapture", egl!!.eglBaseContext)
         capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
-        capturer!!.startCapture(1280, 720, 24)
+        val profile = profileFor(currentQuality, currentDataMode)
+        captureWidth = profile.width
+        captureHeight = profile.height
+        captureFps = profile.fps
+        capturer!!.startCapture(profile.width, profile.height, profile.fps)
         videoTrack = factory!!.createVideoTrack("remote-camera-video", videoSource).apply { setEnabled(true) }
         audioSource = factory!!.createAudioSource(MediaConstraints())
         audioTrack = factory!!.createAudioTrack("remote-camera-audio", audioSource).apply { setEnabled(true) }
@@ -145,6 +171,14 @@ class RtcEngine(
         }
     }
 
+    @Synchronized
+    fun closeSession(sessionId: String) {
+        val peer = peers.remove(sessionId)
+        videoSenders.remove(sessionId)
+        try { peer?.close() } catch (_: Exception) {}
+        if (peers.isEmpty()) stopMedia()
+    }
+
     fun hasPeers(): Boolean = peers.isNotEmpty()
 
     fun switchCamera(facing: String) {
@@ -161,23 +195,34 @@ class RtcEngine(
     }
 
     fun setQuality(quality: String, dataMode: String) {
-        val (bitrate, fps) = when (dataMode) {
-            "ultra" -> Pair(280000, 10)
-            "save" -> Pair(550000, 15)
-            "high" -> Pair(2400000, 30)
-            else -> when (quality) {
-                "360" -> Pair(350000, 15)
-                "480" -> Pair(650000, 20)
-                "1080" -> Pair(2200000, 30)
-                else -> Pair(1200000, 24)
+        val profile = profileFor(quality, dataMode)
+        val camera = capturer
+        if (camera != null &&
+            (profile.width != captureWidth || profile.height != captureHeight || profile.fps != captureFps)
+        ) {
+            try {
+                camera.changeCaptureFormat(profile.width, profile.height, profile.fps)
+                captureWidth = profile.width
+                captureHeight = profile.height
+                captureFps = profile.fps
+            } catch (e: Exception) {
+                Log.w("RemoteCameraRTC", "Could not change camera capture format", e)
+                onState("画質変更に失敗しました。端末が対応する画質を確認してください。")
             }
         }
         videoSenders.values.forEach { sender ->
             try {
                 val params = sender.parameters
-                params.encodings.forEach { it.maxBitrateBps = bitrate; it.maxFramerate = fps }
-                sender.setParameters(params)
-            } catch (e: Exception) { Log.w("RemoteCameraRTC", "Could not change video bitrate", e) }
+                params.encodings.forEach {
+                    it.maxBitrateBps = profile.bitrate
+                    it.maxFramerate = profile.fps
+                }
+                if (!sender.setParameters(params)) {
+                    Log.w("RemoteCameraRTC", "Video sender rejected quality parameters")
+                }
+            } catch (e: Exception) {
+                Log.w("RemoteCameraRTC", "Could not change video bitrate", e)
+            }
         }
     }
 
