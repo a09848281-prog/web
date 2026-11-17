@@ -27,7 +27,7 @@ function doGet() {
 }
 
 function health_() {
-  const version = "3.2.0";
+  const version = "3.3.0";
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty("DB_SPREADSHEET_ID");
   if (!spreadsheetId) {
     return {
@@ -97,7 +97,7 @@ function bridge_(id, result) {
   }).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
   return HtmlService.createHtmlOutput(
     "<!doctype html><html><head><meta charset='utf-8'></head><body>" +
-    "<script>window.parent.postMessage(" + json + ",'https://a09848281-prog.github.io');</script>" +
+    "<script>window.top.postMessage(" + json + ",'https://a09848281-prog.github.io');</script>" +
     "<p>処理が完了しました。</p></body></html>"
   ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
