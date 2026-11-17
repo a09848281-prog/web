@@ -259,7 +259,7 @@ class MonitorService : Service() {
                         .putLong("connectedInterval", connectedInterval)
                         .putLong("idleInterval", idleInterval).apply()
                 }
-                "camera" -> rtc?.switchCamera(payload.optString("facing", "back"))
+                "camera" -> (rtc ?: error("映像接続中ではありません。")).switchCamera(payload.optString("facing", "back"))
                 "volume" -> {
                     val percent = payload.optInt("percent", 70).coerceIn(0, 100)
                     val audio = getSystemService(AUDIO_SERVICE) as AudioManager
