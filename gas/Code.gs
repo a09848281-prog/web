@@ -1,6 +1,6 @@
 /**
- * Remote Camera GAS API v3.1
- * Account-free personal camera API.
+ * Remote Camera GAS API v3.2
+ * Account-free camera-first API.
  * Web controller access is granted only by an expiring Android pairing code.
  */
 const TABLES = {
@@ -22,9 +22,48 @@ const DEVICE_BEGIN_WINDOW_MS = 60 * 60 * 1000;
 
 /** Public health check. */
 function doGet() {
-  return ContentService.createTextOutput(JSON.stringify({
-    ok: true, service: "Remote Camera API", version: "3.1.0", auth: "pairing"
-  })).setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify(health_()))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function health_() {
+  const version = "3.2.0";
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty("DB_SPREADSHEET_ID");
+  if (!spreadsheetId) {
+    return {
+      ok: true, service: "Remote Camera API", version: version, auth: "pairing",
+      databaseReady: false, setupRequired: true,
+      message: "setupDatabase()をもう一度実行してください。"
+    };
+  }
+  try {
+    const ss = SpreadsheetApp.openById(spreadsheetId);
+    const missingSheets = [];
+    const schemaErrors = [];
+    Object.keys(TABLES).forEach(function(name) {
+      const sh = ss.getSheetByName(name);
+      if (!sh) {
+        missingSheets.push(name);
+        return;
+      }
+      const expected = TABLES[name];
+      const actual = sh.getRange(1, 1, 1, expected.length).getDisplayValues()[0];
+      expected.forEach(function(header, index) {
+        if (actual[index] !== header) schemaErrors.push(name + " の " + (index + 1) + " 列目");
+      });
+    });
+    return {
+      ok: true, service: "Remote Camera API", version: version, auth: "pairing",
+      databaseReady: missingSheets.length === 0 && schemaErrors.length === 0,
+      missingSheets: missingSheets, schemaErrors: schemaErrors
+    };
+  } catch (err) {
+    return {
+      ok: true, service: "Remote Camera API", version: version, auth: "pairing",
+      databaseReady: false, setupRequired: true,
+      message: safeError_(err)
+    };
+  }
 }
 
 function doPost(e) {
@@ -58,17 +97,18 @@ function bridge_(id, result) {
   }).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
   return HtmlService.createHtmlOutput(
     "<!doctype html><html><head><meta charset='utf-8'></head><body>" +
-    "<script>window.top.postMessage(" + json + ",'https://a09848281-prog.github.io');</script>" +
+    "<script>window.parent.postMessage(" + json + ",'https://a09848281-prog.github.io');</script>" +
     "<p>処理が完了しました。</p></body></html>"
   ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function dispatch_(r) {
   switch (String(r.action || "")) {
-    case "health": return { ok: true, version: "3.1.0" };
+    case "health": return health_();
     case "device_begin": return deviceBegin_(r);
     case "device_refresh_code": return refreshDeviceCode_(r);
     case "claim_device": return claimDevice_(r);
+    case "unpair_device": return unpairDevice_(r);
     case "device_poll": return devicePoll_(r);
     case "send_signal": return sendSignal_(r);
     case "poll_signals": return pollSignals_(r);
@@ -91,7 +131,12 @@ function dispatch_(r) {
  * Legacy Users/Sessions sheets, if present, are left untouched and are no longer used.
  */
 function setupDatabase() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const props = PropertiesService.getScriptProperties();
+  let ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    const savedId = props.getProperty("DB_SPREADSHEET_ID");
+    if (savedId) ss = SpreadsheetApp.openById(savedId);
+  }
   if (!ss) throw Error("対象スプレッドシートから「拡張機能 → Apps Script」で作成してください。");
   Object.keys(TABLES).forEach(function(name) {
     let sh = ss.getSheetByName(name);
@@ -114,13 +159,18 @@ function setupDatabase() {
     }
     sh.setFrozenRows(1);
   });
-  return "Remote Camera database ready (existing rows preserved).";
+  props.setProperty("DB_SPREADSHEET_ID", ss.getId());
+  return "Remote Camera database ready (existing rows preserved; spreadsheet ID saved).";
 }
 
 function db_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) throw Error("GASを対象スプレッドシートに紐付けてください。");
-  return ss;
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty("DB_SPREADSHEET_ID");
+  if (id) return SpreadsheetApp.openById(id);
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (!active) throw Error("DB接続情報がありません。Apps ScriptでsetupDatabase()を実行してください。");
+  props.setProperty("DB_SPREADSHEET_ID", active.getId());
+  return active;
 }
 function sheet_(name) {
   const sh = db_().getSheetByName(name);
@@ -305,12 +355,37 @@ function claimDevice_(r) {
   }
 }
 
+function unpairDevice_(r) {
+  const d = authController_(r);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const current = find_("Devices", 0, d.deviceId);
+    if (!current || !current.v[10] || current.v[10] !== hash_(String(r.controllerToken || ""))) {
+      throw Error("ペアリング状態が変更されています。端末一覧を更新してください。");
+    }
+    const sh = sheet_("Devices");
+    sh.getRange(current.row, 5, 1, 2).clearContent();
+    sh.getRange(current.row, 10).setValue("pending");
+    sh.getRange(current.row, 11).clearContent();
+  } finally {
+    lock.releaseLock();
+  }
+  log_(d.deviceId, "unpair_device", true, "controller pairing revoked");
+  return { ok: true, deviceId: d.deviceId, unpaired: true };
+}
+
 function devicePoll_(r) {
   const id = String(r.deviceId || "");
   const secret = String(r.deviceSecret || "");
   const d = authDevice_(id, secret);
   if (d.v[9] === "pending") {
-    return { ok: true, registered: false, commands: [], signals: [], latestSeq: Number(r.afterSeq || 0) };
+    const codeActive = !!d.v[4] && new Date(d.v[5]).getTime() > Date.now();
+    return {
+      ok: true, registered: false, needsPairing: true,
+      pairingCodeActive: codeActive, commands: [], signals: [],
+      latestSeq: Number(r.afterSeq || 0)
+    };
   }
   sheet_("Devices").getRange(d.row, 9).setValue(now_());
   const commandRows = rows_("Commands");
@@ -330,7 +405,8 @@ function devicePoll_(r) {
   for (let i = 0; i < allSignals.length; i++) {
     const v = allSignals[i];
     const seq = Number(v[0] || i + 2);
-    if (v[2] === id && v[4] === "device" && seq > after && new Date(v[9]).getTime() > Date.now()) {
+    if (v[2] === id && v[3] === "viewer" && v[4] === "device" &&
+        seq > after && new Date(v[9]).getTime() > Date.now()) {
       signals.push({ seq: seq, sessionId: v[1], kind: v[5], sdp: v[6], candidate: v[7] ? JSON.parse(v[7]) : null });
     }
   }
