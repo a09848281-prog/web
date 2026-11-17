@@ -182,7 +182,7 @@ class MainActivity : Activity() {
     private fun showSavedCode() {
         val code = prefs.getString("registrationCode", "") ?: ""
         val id = prefs.getString("deviceId", "") ?: ""
-        if (code.isNotBlank() && id.isNotBlank()) codeView.text = "登録コード：$code\n端末ID：$id"
+        if (id.isNotBlank()) codeView.text = if (code.isNotBlank()) "登録コード：$code\n端末ID：$id" else "ペアリング済み\n端末ID：$id"
     }
 
     override fun onResume() {
@@ -202,7 +202,7 @@ class MainActivity : Activity() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) {
             val code = intent?.getStringExtra(MonitorService.EXTRA_CODE) ?: return
             val id = intent.getStringExtra(MonitorService.EXTRA_DEVICE_ID) ?: ""
-            codeView.text = "登録コード：$code\n端末ID：$id"
+            codeView.text = if (code.isNotBlank()) "登録コード：$code\n端末ID：$id" else "ペアリング済み\n端末ID：$id"
         }
     }
 
