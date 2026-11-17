@@ -46,6 +46,8 @@ class MonitorService : Service() {
     private var idleLocationEnabled = false
     private var connectedInterval = 30L
     private var idleInterval = 300L
+    private var currentQuality = "720"
+    private var currentDataMode = "standard"
     private var lastLocationAttempt = 0L
     private var lastCodeRefresh = 0L
 
@@ -132,6 +134,7 @@ class MonitorService : Service() {
                                 if (rtc == null) {
                                     val currentApi = api ?: continue
                                     rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState)
+                                    rtc?.setQuality(currentQuality, currentDataMode)
                                 }
                                 rtc?.handleOffer(session, signal.optString("sdp"))
                                 notifyState("接続要求を受信しました")
@@ -197,7 +200,9 @@ class MonitorService : Service() {
         idleLocationEnabled = settings.optBoolean("idleLocationEnabled", false)
         connectedInterval = settings.optLong("connectedInterval", 30).coerceIn(10, 3600)
         idleInterval = settings.optLong("idleInterval", 300).coerceIn(10, 3600)
-        rtc?.setQuality(settings.optString("quality", "720"), settings.optString("dataMode", "standard"))
+        currentQuality = settings.optString("quality", "720")
+        currentDataMode = settings.optString("dataMode", "standard")
+        rtc?.setQuality(currentQuality, currentDataMode)
     }
 
     private suspend fun processCommand(command: JSONObject) {
@@ -216,8 +221,9 @@ class MonitorService : Service() {
             "volume" -> {
                 val percent = payload.optInt("percent", 70).coerceIn(0, 100)
                 val audio = getSystemService(AUDIO_SERVICE) as AudioManager
-                val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                audio.setStreamVolume(AudioManager.STREAM_MUSIC, (max * percent / 100.0).toInt(), 0)
+                val stream = AudioManager.STREAM_VOICE_CALL
+                val max = audio.getStreamMaxVolume(stream)
+                audio.setStreamVolume(stream, (max * percent / 100.0).toInt(), 0)
             }
             "quality", "data_mode" -> rtc?.setQuality(payload.optString("quality", "720"), payload.optString("dataMode", "standard"))
             "disconnect" -> {
