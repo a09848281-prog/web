@@ -57,6 +57,16 @@ jobs:
               !app.includes('api("health")') || !app.includes('api("unpair_device"')) {
             throw new Error('GAS health/DB binding or browser API health/unpair flow is missing.');
           }
+          if (!gas.includes('window.top.postMessage') ||
+              app.includes('event.source !== frame.contentWindow')) {
+            throw new Error('GAS HtmlService nested iframe response bridge is not configured.');
+          }
+          if (!android.includes('ACTION_STOP') || !android.includes('addAction(') ||
+              !android.includes('stopMonitoringNow(') ||
+              !main.includes('refreshMonitoringButtons') ||
+              !main.includes('GASでペアリング確認済み')) {
+            throw new Error('Background stop action or server-verified pairing state is missing.');
+          }
           if (!gas.includes('case "unpair_device"') || !gas.includes('function unpairDevice_') ||
               !app.includes('kind: "bye"') || !android.includes('"bye"') ||
               !rtc.includes('fun closeSession(')) {
@@ -65,14 +75,14 @@ jobs:
           if (!rtc.includes('changeCaptureFormat')) {
             throw new Error('Camera resolution changes are not applied to the capturer.');
           }
-          console.log('HTML IDs, Web/GAS/Android API compatibility, DB health, account-free pairing and camera controls OK.');
+          console.log('HTML IDs, nested GAS bridge, API compatibility, pairing state, background stop action, DB health and camera controls OK.');
           NODE
       - name: Build Android debug APK
         working-directory: android
         run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-camera-debug-apk-v3.2
+          name: remote-camera-debug-apk-v3.3
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
