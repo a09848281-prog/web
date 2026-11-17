@@ -147,7 +147,13 @@ class MonitorService : Service() {
                         JSONObject().put("deviceId", deviceId).put("deviceSecret", secret).put("afterSeq", afterSeq)
                     )
                     if (!response.optBoolean("registered", false)) {
-                        if (System.currentTimeMillis() - lastCodeRefresh > 8 * 60 * 1000L) refreshCode()
+                        // A controller can revoke pairing remotely. Stop media immediately on the next poll.
+                        rtc?.dispose()
+                        rtc = null
+                        val pairingCodeActive = response.optBoolean("pairingCodeActive", false)
+                        if (!pairingCodeActive || System.currentTimeMillis() - lastCodeRefresh > 8 * 60 * 1000L) {
+                            refreshCode()
+                        }
                         notifyState("Android端末の登録待ち：Webに8桁コードを入力")
                     } else {
                         val needsPairing = response.optBoolean("needsPairing", false)
@@ -160,26 +166,33 @@ class MonitorService : Service() {
                             prefs.edit().remove("registrationCode").apply()
                             broadcastCode("", deviceId)
                         }
-                        afterSeq = maxOf(afterSeq, response.optInt("latestSeq", afterSeq))
-                        prefs.edit().putInt("afterSeq", afterSeq).apply()
                         applySettings(response.optJSONObject("settings") ?: JSONObject())
                         val signals = response.optJSONArray("signals") ?: JSONArray()
                         for (i in 0 until signals.length()) {
                             val signal = signals.optJSONObject(i) ?: continue
-                            if (signal.optString("kind") == "offer" && signal.optString("sdp").isNotBlank()) {
-                                val session = signal.optString("sessionId")
-                                if (rtc == null) {
-                                    val currentApi = api ?: continue
-                                    rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState)
+                            when (signal.optString("kind")) {
+                                "offer" -> {
+                                    if (signal.optString("sdp").isBlank()) continue
+                                    val session = signal.optString("sessionId")
+                                    if (rtc == null) {
+                                        val currentApi = api ?: continue
+                                        rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState)
+                                    }
+                                    rtc?.handleOffer(session, signal.optString("sdp"))
+                                    rtc?.setQuality(currentQuality, currentDataMode)
+                                    notifyState("接続要求を受信しました")
                                 }
-                                rtc?.handleOffer(session, signal.optString("sdp"))
-                                // Apply saved quality after handleOffer creates the RTP video sender.
-                                rtc?.setQuality(currentQuality, currentDataMode)
-                                notifyState("接続要求を受信しました")
+                                "bye" -> {
+                                    rtc?.closeSession(signal.optString("sessionId"))
+                                    notifyState("Web側から切断要求を受信しました")
+                                }
                             }
                         }
                         val commands = response.optJSONArray("commands") ?: JSONArray()
                         for (i in 0 until commands.length()) processCommand(commands.optJSONObject(i) ?: continue)
+                        // Advance only after this poll's signals and commands have been handed to the handlers.
+                        afterSeq = maxOf(afterSeq, response.optInt("latestSeq", afterSeq))
+                        prefs.edit().putInt("afterSeq", afterSeq).apply()
                         notifyState(if (rtc?.hasPeers() == true) "監視中・接続済み" else "監視待機中")
                     }
                 } catch (e: Exception) {
@@ -267,10 +280,11 @@ class MonitorService : Service() {
                     val max = audio.getStreamMaxVolume(stream)
                     audio.setStreamVolume(stream, (max * percent / 100.0).toInt(), 0)
                 }
-                "quality", "data_mode" -> rtc?.setQuality(
-                    payload.optString("quality", "720"),
-                    payload.optString("dataMode", "standard")
-                )
+                "quality", "data_mode" -> {
+                    currentQuality = payload.optString("quality", currentQuality)
+                    currentDataMode = payload.optString("dataMode", currentDataMode)
+                    rtc?.setQuality(currentQuality, currentDataMode)
+                }
                 "disconnect" -> {
                     rtc?.dispose()
                     rtc = null
