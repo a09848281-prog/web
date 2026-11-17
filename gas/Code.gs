@@ -17,6 +17,8 @@ const COMMAND_MINUTES = 3;
 const SIGNAL_MINUTES = 3;
 const PAIR_FAIL_LIMIT = 25;
 const PAIR_FAIL_WINDOW_MS = 10 * 60 * 1000;
+const DEVICE_BEGIN_LIMIT = 5;
+const DEVICE_BEGIN_WINDOW_MS = 60 * 60 * 1000;
 
 /** Public health check. */
 function doGet() {
@@ -191,6 +193,23 @@ function clearPairRate_() {
   PropertiesService.getScriptProperties().deleteProperty("PAIR_ATTEMPTS");
 }
 
+function checkDeviceBeginRate_() {
+  const props = PropertiesService.getScriptProperties();
+  const key = "DEVICE_BEGIN_ATTEMPTS";
+  const now = Date.now();
+  const parts = String(props.getProperty(key) || "").split(":");
+  let start = Number(parts[0] || 0);
+  let count = Number(parts[1] || 0);
+  if (!start || now - start >= DEVICE_BEGIN_WINDOW_MS) {
+    start = now;
+    count = 0;
+  }
+  if (count >= DEVICE_BEGIN_LIMIT) {
+    throw Error("端末の初回登録回数が上限に達しました。1時間後に再試行してください。");
+  }
+  props.setProperty(key, start + ":" + (count + 1));
+}
+
 function authDevice_(deviceId, secret) {
   const d = find_("Devices", 0, deviceId);
   if (!d || !secret || hash_(secret) !== d.v[3] || !["pending", "active"].includes(String(d.v[9]))) {
@@ -216,6 +235,7 @@ function deviceBegin_(r) {
   const secret = randomToken_();
   const code = newCode_();
   const expiry = new Date(Date.now() + CODE_MINUTES * 60000);
+  checkDeviceBeginRate_();
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
