@@ -155,7 +155,9 @@ class MainActivity : Activity() {
         }
         val cameraOk = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         val micOk = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        if (!cameraOk || !micOk) {
+        val locationOk = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!cameraOk || !micOk || !locationOk) {
             Toast.makeText(this, "先に必要な権限を許可してから監視待機を開始してください。", Toast.LENGTH_LONG).show()
             requestStart()
             return
