@@ -1,15 +1,15 @@
-# セットアップ手順 v3.2（アカウント不要）
+# セットアップ手順 v3.3（アカウント不要）
 
 ## 1. GASとスプレッドシート
 1. Google Sheetを作成します。
 2. 「拡張機能」→「Apps Script」を開きます。
 3. gas/Code.gs の最新版を Code.gs に貼り付けて保存します。
 4. 関数一覧から setupDatabase を選び、実行して権限を許可します。
-5. setupDatabase は既存データを消さず、必要なシート・見出しを確認し、接続先スプレッドシートIDをGASのスクリプトプロパティに保存します。**v3.2へ更新した後は、以前に実行済みでも必ずもう一度実行してください。**
-6. 初回は「新しいデプロイ」→「ウェブアプリ」。既存環境は「デプロイを管理」から新バージョンへ更新します。
+5. 初回セットアップ時に setupDatabase を実行します。既存データは消去せず、接続先Spreadsheet IDをスクリプトプロパティに保存します。**すでにv3.2で `databaseReady:true` を確認済みなら、v3.3のiframe応答修正では再実行不要です。**
+6. 初回は「新しいデプロイ」→「ウェブアプリ」。既存環境は「デプロイを管理」→編集（鉛筆）→バージョン「新バージョン」→「デプロイ」で更新します。GitHubへの更新だけではGASは自動更新されません。
 7. 実行ユーザーは「自分」、アクセスできるユーザーは「全員」にします。
 8. /exec URLが現在の web/config.json に設定されていることを確認します。
-9. /exec URLをブラウザーで開き、JSONの `databaseReady` が `true` であることを確認します。
+9. /exec URLをブラウザーで開き、JSONの `version` が `3.3.0`、`databaseReady` が `true` であることを確認します。
 
 ## 2. GitHub Pages
 1. GitHubリポジトリの Settings → Pages を開きます。
@@ -18,11 +18,11 @@
 4. 公開URL： https://a09848281-prog.github.io/web/
 
 ## 3. Androidの準備
-1. 最新の debug APK を GitHub Actions の Build Android APK から取得してインストールします。
+1. [v3.3.0のビルド結果](https://github.com/a09848281-prog/web/actions/runs/44095787786)を開き、Artifact `remote-camera-debug-apk-v3.3` を取得してインストールします。
 2. Android 13端末でアプリを開きます。
 3. カメラ・マイク・位置情報・通知の権限を許可します。
 4. 「監視待機を開始」を押します。
-5. Android画面に8桁のペアリングコードが表示されます。
+5. Android画面に8桁のペアリングコードが表示されます。通知欄の「待機を停止」からバックグラウンド待機も停止できます。
 
 ## 4. iPadからペアリング
 1. iPad SafariでGitHub Pagesを開きます。
