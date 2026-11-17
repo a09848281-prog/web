@@ -6,7 +6,6 @@ on:
       - "android/**"
       - "web/**"
       - "gas/**"
-      - "docs/**"
       - ".github/workflows/**"
   workflow_dispatch:
 permissions:
