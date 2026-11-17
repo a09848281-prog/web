@@ -20,12 +20,13 @@
     <div class="sideTitle"><h3>接続端末</h3><button id="refresh" type="button" aria-label="端末一覧を更新">↻</button></div>
     <div id="devices"><p class="muted">登録済み端末はありません。</p></div>
     <button id="pair" type="button" class="primary wide">＋ Androidをペアリング</button>
-    <p class="hint">Androidアプリに表示された8桁コードを入力します。ユーザー登録・ログインは不要です。</p>
+    <button id="unpair" type="button" class="wide danger" disabled>選択中の端末をペアリング解除</button>
+    <p class="hint">Androidアプリに表示された8桁コードを入力します。ユーザー登録・ログインはありません。ペアリング情報はこのiPadのブラウザーに保存されます。</p>
     <hr>
     <h3>監視操作</h3>
     <button id="connect" type="button" class="primary wide" disabled>接続</button>
     <button id="disconnect" type="button" class="wide" disabled>切断</button>
-    <label>画質<select id="quality"><option value="auto">自動</option><option value="360">360p</option><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></label>
+    <label>画質<select id="quality"><option value="auto">自動（720p基準）</option><option value="360">360p</option><option value="480">480p</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></label>
     <label>通信量モード<select id="dataMode"><option value="auto">自動</option><option value="ultra">超節約</option><option value="save">節約</option><option value="standard" selected>標準</option><option value="high">高画質</option></select></label>
     <label>Android音量 <output id="volumeValue">70%</output><input id="volume" type="range" min="0" max="100" value="70"></label>
     <label>カメラ<select id="camera"><option value="back">背面</option><option value="front">前面</option></select></label>
