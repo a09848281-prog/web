@@ -370,8 +370,15 @@ function sendSignal_(r) {
   }
   const sdp = String(r.sdp || "").slice(0, 200000);
   const candidate = r.candidate ? JSON.stringify(r.candidate).slice(0, 10000) : "";
-  const seq = append_("Signals", [0, session, id, sender, recipient, kind, sdp, candidate, now_(), new Date(Date.now() + SIGNAL_MINUTES * 60000)]);
-  sheet_("Signals").getRange(seq, 1).setValue(seq);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  let seq = 0;
+  try {
+    seq = append_("Signals", [0, session, id, sender, recipient, kind, sdp, candidate, now_(), new Date(Date.now() + SIGNAL_MINUTES * 60000)]);
+    sheet_("Signals").getRange(seq, 1).setValue(seq);
+  } finally {
+    lock.releaseLock();
+  }
   return { ok: true, seq: seq };
 }
 
