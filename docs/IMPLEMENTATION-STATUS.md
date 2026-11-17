@@ -21,6 +21,14 @@
 - Android Gradle debug APKビルド
 - GitHub Actions artifact生成
 
+## CI・公開確認済み（2026-11-17）
+- v3.2.0 Android debug build / source checks：成功
+- GitHub Actions：https://github.com/a09848281-prog/web/actions/runs/44091426011
+- GitHub Pages deploy：成功
+- Deploy run：https://github.com/a09848281-prog/web/actions/runs/44091401728
+- APK Artifact：`remote-camera-debug-apk-v3.2`（Artifact ID `14332220491`）
+- APK SHA-256：`c45db79ece9a0dc7a725eec5d3461196e27e2c11d51cbb3bf625a97ea65dcd09`
+
 ## 実機未検証
 - Google Apps Script実デプロイ環境でのWeb iframe応答・DBヘルスチェック
 - iPad Safariからのペアリング・WebRTC接続
