@@ -1,23 +1,20 @@
-# ビルド検証記録 v3.2.0（アカウント不要・監視カメラ中心）
+# ビルド検証記録 v3.3.0（GAS応答修正・待機停止対応）
 
 - 更新日：2026-11-17
 - Repository：a09848281-prog/web
 - 現行ソース：main ブランチ
-- ビルド対象 Commit：`b38c283ce6d8f197ea4b342ad0809af648cbe2ad`
-- Android versionCode：302
-- Android versionName：3.2.0
-- GitHub Actions build run：https://github.com/a09848281-prog/web/actions/runs/44091426011
-- ビルド結果：成功（構文・API整合性チェック、Android Gradle debug APKビルド、Artifact upload）
-- GitHub Pages deploy run：https://github.com/a09848281-prog/web/actions/runs/44091401728
+- ビルド対象 Commit：`c4ef8fe0a12c10115b5578dde615d6aa5faa8532`
+- Android versionCode：303
+- Android versionName：3.3.0
+- GitHub Actions build run：https://github.com/a09848281-prog/web/actions/runs/44095787786
+- ビルド結果：成功（Web/GAS構文、HTML/API整合性、追加ソース検査、Android Gradle debug APKビルド、Artifact upload）
+- GitHub Pages deploy run：https://github.com/a09848281-prog/web/actions/runs/44095726255
 - Pages deploy結果：成功
-- APK成果物名：`remote-camera-debug-apk-v3.2`
-- Artifact ID：`14332220491`
-- APK本体サイズ：50,776,969 bytes
-- APK SHA-256：`c45db79ece9a0dc7a725eec5d3461196e27e2c11d51cbb3bf625a97ea65dcd09`
-- Artifact ZIP SHA-256：`9619b7a2130ee2403205ea3585a7a62b6bc6e480e442be203d024a8e4822e0aa`
-- APKはActionsから取得・展開し、APKファイルの存在・サイズ・SHA-256を照合済み。
+- APK成果物名：`remote-camera-debug-apk-v3.3`
+- Artifact ID：`14333203381`
+- APKはGitHub ActionsのArtifactとして生成済み。実機でのインストール・動作は未確認。
 
-## v3.2.0で追加・修正した内容
+## v3.2.0で追加・修正した内容（継承機能）
 
 - GASのHealth APIで接続先スプレッドシートと必須シート・見出しを確認。
 - setupDatabase()でSpreadsheet IDをScript Propertiesへ保存し、Webアプリ実行時にopenById()でDBを開く。
@@ -28,6 +25,15 @@
 - プッシュトゥトーク中はAndroidからの受信音声を一時ミュート。
 - 画質設定をカメラ解像度・フレームレート・最大ビットレートへ反映。
 - CIにWeb/GAS/Android API整合性、HTML ID、アカウント機能の残存、DBヘルス、ペアリング解除、カメラ画質反映の検査を追加。
+
+## v3.3.0で追加・修正した内容
+
+- GASのHtmlService応答を `window.top.postMessage` で最上位のGitHub Pagesへ返すよう変更。
+- Web側はGASの入れ子iframeから返るメッセージを、Googleの許可オリジンとランダムrequestIdで検証して受信。
+- WebのGAS応答なしメッセージに詳細なタイムアウト原因を表示。
+- Android通知欄へ「待機を停止」アクションを追加。停止時はGASポーリング・位置情報取得・WebRTCを終了。
+- Androidのペアリング表示をGAS確認結果と連動し、端末IDのローカル保存だけでは確認済みにしない。
+- CIにiframeブリッジとバックグラウンド停止操作のチェックを追加。
 
 ## v3.1.0から継続する内容
 
@@ -48,7 +54,7 @@
 3. 既存のウェブアプリデプロイを「新バージョン」に更新する。
 4. /execを開き、JSONの `databaseReady:true` を確認する。
 5. GitHub Pagesの最新画面を開き、画面上部にGAS接続済みの表示が出ることを確認する。
-6. 最新v3.2.0 APKをGitHub Actionsから取得し、Android 13端末へインストールする。
+6. 最新v3.3.0 APKをGitHub Actionsから取得し、Android 13端末へインストールする。
 7. Androidで監視待機を開始し、iPadのWebから8桁コードでペアリングする。
 8. 実機で映像・双方向音声・操作・位置情報を検証する。
 
@@ -58,7 +64,7 @@
 
 ## 未検証・制限
 
-- Google Apps Script実環境でのv3.2 POST/iframe応答とDB接続。
+- Google Apps Script実環境でのv3.3 POST/iframe応答とDB接続。
 - iPad Safariからのペアリング・WebRTC接続。
 - Android 13でのForeground Service、カメラ・マイク、位置情報。
 - STUN/TURNなしでの異なるネットワーク間接続。
