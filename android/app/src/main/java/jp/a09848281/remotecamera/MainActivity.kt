@@ -98,7 +98,7 @@ class MainActivity : Activity() {
                     status.text = "GitHubの web/config.json にGAS URLを設定してください。"
                 } else {
                     status.text = "設定を取得しました。必要な権限を許可して待機を開始できます。"
-                    startButton.isEnabled = true
+                    refreshMonitoringButtons()
                     refreshCodeButton.isEnabled = true
                     showSavedCode()
                 }
@@ -137,15 +137,27 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun refreshMonitoringButtons() {
+        val running = prefs.getBoolean("monitoringEnabled", false)
+        startButton.isEnabled = gasUrl.isNotBlank() && !running
+        stopButton.isEnabled = running
+    }
+
     private fun startMonitoring() {
         val intent = Intent(this, MonitorService::class.java).apply {
             action = MonitorService.ACTION_START
             putExtra(MonitorService.EXTRA_GAS_URL, gasUrl)
         }
-        ContextCompat.startForegroundService(this, intent)
-        status.text = "監視待機を開始しました。通知欄を確認してください。"
-        startButton.isEnabled = false
-        stopButton.isEnabled = true
+        try {
+            ContextCompat.startForegroundService(this, intent)
+            prefs.edit().putBoolean("monitoringEnabled", true).apply()
+            status.text = "監視待機を開始しました。通知欄からも停止できます。"
+            refreshMonitoringButtons()
+        } catch (e: Exception) {
+            prefs.edit().putBoolean("monitoringEnabled", false).apply()
+            status.text = "待機開始エラー：" + (e.message ?: "開始できませんでした")
+            refreshMonitoringButtons()
+        }
     }
 
     private fun requestRefreshCode() {
@@ -182,15 +194,21 @@ class MainActivity : Activity() {
 
     private fun stopMonitoring() {
         stopService(Intent(this, MonitorService::class.java))
-        status.text = "監視待機を停止しました。"
-        startButton.isEnabled = gasUrl.isNotBlank()
-        stopButton.isEnabled = false
+        prefs.edit().putBoolean("monitoringEnabled", false).apply()
+        status.text = "監視待機を停止しました。バックグラウンド通信も停止しました。"
+        refreshMonitoringButtons()
     }
 
     private fun showSavedCode() {
         val code = prefs.getString("registrationCode", "") ?: ""
         val id = prefs.getString("deviceId", "") ?: ""
-        if (id.isNotBlank()) codeView.text = if (code.isNotBlank()) "登録コード：$code\n端末ID：$id" else "ペアリング済み\n端末ID：$id"
+        codeView.text = when {
+            id.isBlank() -> "登録コード：--"
+            code.isNotBlank() -> "登録コード：$code\n端末ID：$id"
+            prefs.getBoolean("serverPaired", false) ->
+                "GASでペアリング確認済み\n端末ID：$id"
+            else -> "端末情報あり・GAS確認待ち\n端末ID：$id"
+        }
     }
 
     override fun onResume() {
@@ -199,6 +217,7 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(codeReceiver, filter, RECEIVER_NOT_EXPORTED)
         else @Suppress("DEPRECATION") registerReceiver(codeReceiver, filter)
         showSavedCode()
+        refreshMonitoringButtons()
     }
 
     override fun onPause() {
@@ -210,7 +229,11 @@ class MainActivity : Activity() {
         override fun onReceive(context: android.content.Context?, intent: Intent?) {
             val code = intent?.getStringExtra(MonitorService.EXTRA_CODE) ?: return
             val id = intent.getStringExtra(MonitorService.EXTRA_DEVICE_ID) ?: ""
-            codeView.text = if (code.isNotBlank()) "登録コード：$code\n端末ID：$id" else "ペアリング済み\n端末ID：$id"
+            if (code.isNotBlank()) {
+                codeView.text = "登録コード：$code\n端末ID：$id"
+            } else {
+                showSavedCode()
+            }
         }
     }
 
