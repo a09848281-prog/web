@@ -2,19 +2,16 @@
 
 Firebase非使用・GAS／GitHub／Googleスプレッドシート構成の個人利用プロジェクトです。
 
-## 開発仕様書
+## 仕様書・手順
+- [完全版開発仕様書 v3.0](docs/Android-iPad-Remote-Surveillance-Camera-Spec-v3.0.md)
+- [セットアップ手順](docs/QUICKSTART.md)
+- [実装状況・未検証事項](docs/IMPLEMENTATION-STATUS.md)
 
-- [完全版開発仕様書 v3.0（2026年11月17日）](docs/Android-iPad-Remote-Surveillance-Camera-Spec-v3.0.md)
+## ソース構成
+- web/ : iPad Safari向けWebサイト
+- gas/ : Google Apps Script API
+- android/ : Kotlin / WebRTC Androidアプリ
+- .github/workflows/ : APKビルドとGitHub Pages公開
 
-## 現在の開発状況
-
-- 状態：設計段階
-- カメラ側：Android 13スマートフォン
-- 操作・視聴側：iPad 第9世代（Safari）
-- Web：GitHub Pages
-- Androidアプリ：Kotlin／Android SDKで開発し、APKとして配布
-- バックエンド：Google Apps Script／Googleスプレッドシート
-- 映像・音声：WebRTCによる直接通信を目標とする
-- 録画・録音：実装しない
-
-詳細な機能・制約・受け入れテストは、上記の完全版開発仕様書を参照してください。
+## 重要
+Androidのカメラ・マイクForeground Serviceはアプリが表示され権限取得済みの状態で開始してください。STUN/TURNを使わないWebRTCは全ネットワーク間の接続を保証しません。GAS・Sheets・Pagesの初回設定と実機確認が必要です。

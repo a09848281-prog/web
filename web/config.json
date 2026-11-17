@@ -1,0 +1,6 @@
+{
+  "gasUrl": "https://script.google.com/macros/s/PASTE_YOUR_DEPLOYMENT_ID/exec",
+  "appVersion": "3.0.0",
+  "pollIntervalMs": 2500,
+  "requestTimeoutMs": 20000
+}
