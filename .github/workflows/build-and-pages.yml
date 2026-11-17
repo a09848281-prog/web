@@ -38,6 +38,7 @@ jobs:
           const app = fs.readFileSync('web/app.js', 'utf8');
           const gas = fs.readFileSync('gas/Code.gs', 'utf8');
           const android = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/MonitorService.kt', 'utf8');
+          const main = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/MainActivity.kt', 'utf8');
           const rtc = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/RtcEngine.kt', 'utf8');
           const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(x => x[1]);
           const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
