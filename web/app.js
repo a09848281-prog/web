@@ -555,26 +555,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     await loadConfig();
     S.devices = readDevices();
-    refreshDeviceList();
+    renderDevices();
     try {
       const health = await api("health");
       if (!health.databaseReady) {
         $("pair").disabled = true;
+        setControlsEnabled(false);
         status("GAS接続済み・DB未設定");
         toast(health.message || "GASのsetupDatabase()を実行し、最新バージョンをデプロイしてください。");
       } else {
         $("pair").disabled = false;
+        refreshDeviceList();
         status(S.device ? "ペアリング済み" : "GAS接続済み・端末未登録", true);
       }
     } catch (healthError) {
       $("pair").disabled = true;
+      setControlsEnabled(false);
       status("GAS応答なし");
       toast("GASへのPOST通信を確認できません。Code.gsの更新とウェブアプリの再デプロイを確認してください。");
       console.error("GAS health check failed", healthError);
     }
-    if (S.device) setControlsEnabled(true);
   } catch (error) {
     $("pair").disabled = true;
+    setControlsEnabled(false);
     toast(error.message);
     status("設定エラー");
   }
