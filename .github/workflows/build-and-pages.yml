@@ -1,4 +1,4 @@
-name: Build Android APK and deploy Web
+name: Build Android APK
 on:
   push:
     branches: [main]
@@ -10,16 +10,11 @@ on:
       - "docs/**"
       - "README.md"
   workflow_dispatch:
-
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
 concurrency:
-  group: github-pages
+  group: android-build
   cancel-in-progress: true
-
 jobs:
   android-build:
     name: Android debug APK
@@ -46,17 +41,3 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
-
-  deploy-pages:
-    if: github.ref == 'refs/heads/main'
-    needs: android-build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: web
-      - uses: actions/deploy-pages@v4
