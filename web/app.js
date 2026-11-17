@@ -151,6 +151,7 @@ function setControlsEnabled(enabled) {
   });
   $("connect").disabled = !enabled || !!S.pc;
   $("disconnect").disabled = !S.pc;
+  $("camera").disabled = !enabled || !S.pc;
   $("ptt").disabled = !S.pc;
 }
 function selectDevice(device) {
@@ -245,6 +246,7 @@ async function connect() {
     S.seq = 0;
     const pc = new RTCPeerConnection({ iceServers: [] });
     S.pc = pc;
+    $("camera").disabled = false;
     const remote = new MediaStream();
     $("remoteVideo").srcObject = remote;
     pc.addTransceiver("video", { direction: "recvonly" });
@@ -327,6 +329,7 @@ async function disconnect(sendCommand = true) {
   $("placeholder").classList.remove("hidden");
   $("connect").disabled = !S.device;
   $("disconnect").disabled = true;
+  $("camera").disabled = true;
   $("ptt").disabled = true;
   $("ptt").classList.remove("active");
   $("ptt").textContent = "押している間だけ話す";
