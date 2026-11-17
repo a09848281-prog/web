@@ -22,6 +22,7 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var codeView: TextView
     private lateinit var startButton: Button
+    private lateinit var refreshCodeButton: Button
     private lateinit var stopButton: Button
     private var gasUrl = ""
     private val prefs by lazy { getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE) }
@@ -51,6 +52,12 @@ class MainActivity : Activity() {
             setTextColor(0xFF2862C8.toInt())
             setPadding(0, 12, 0, 24)
         }
+
+        refreshCodeButton = Button(this).apply {
+            text = "ペアリングコードを再発行"
+            isEnabled = false
+            setOnClickListener { requestRefreshCode() }
+        }
         startButton = Button(this).apply {
             text = "監視待機を開始"
             isEnabled = false
@@ -63,6 +70,7 @@ class MainActivity : Activity() {
         }
         root.addView(status)
         root.addView(codeView)
+        root.addView(refreshCodeButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(startButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(stopButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(TextView(this).apply {
@@ -91,6 +99,7 @@ class MainActivity : Activity() {
                 } else {
                     status.text = "設定を取得しました。必要な権限を許可して待機を開始できます。"
                     startButton.isEnabled = true
+                    refreshCodeButton.isEnabled = true
                     showSavedCode()
                 }
             } catch (e: Exception) {
@@ -137,6 +146,30 @@ class MainActivity : Activity() {
         status.text = "監視待機を開始しました。通知欄を確認してください。"
         startButton.isEnabled = false
         stopButton.isEnabled = true
+    }
+
+    private fun requestRefreshCode() {
+        if (gasUrl.isBlank()) {
+            Toast.makeText(this, "GAS設定を読み込めていません。", Toast.LENGTH_LONG).show()
+            return
+        }
+        val cameraOk = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        val micOk = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (!cameraOk || !micOk) {
+            Toast.makeText(this, "先に必要な権限を許可してから監視待機を開始してください。", Toast.LENGTH_LONG).show()
+            requestStart()
+            return
+        }
+        val intent = Intent(this, MonitorService::class.java).apply {
+            action = MonitorService.ACTION_REFRESH_CODE
+            putExtra(MonitorService.EXTRA_GAS_URL, gasUrl)
+        }
+        try {
+            ContextCompat.startForegroundService(this, intent)
+            Toast.makeText(this, "ペアリングコードを再発行しています。", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "再発行できません：" + (e.message ?: "エラー"), Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun stopMonitoring() {
