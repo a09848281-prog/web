@@ -11,7 +11,9 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: android-build
+  # Keep builds from different branches independent. Rapid feature commits on
+  # one branch may replace that branch's build, but must not cancel main/base.
+  group: android-build-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   android-build:
