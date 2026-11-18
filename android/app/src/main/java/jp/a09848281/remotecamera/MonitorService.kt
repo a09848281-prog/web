@@ -437,8 +437,12 @@ class MonitorService : Service() {
         idleLocationEnabled = settings.optBoolean("idleLocationEnabled", false)
         connectedInterval = settings.optLong("connectedInterval", 30).coerceIn(10, 3600)
         idleInterval = settings.optLong("idleInterval", 300).coerceIn(10, 3600)
-        currentQuality = settings.optString("quality", "720")
-        currentDataMode = settings.optString("dataMode", "standard")
+        currentQuality = settings.optString(
+            "quality", prefs.getString("currentQuality", "720") ?: "720"
+        )
+        currentDataMode = settings.optString(
+            "dataMode", prefs.getString("currentDataMode", "standard") ?: "standard"
+        )
         rtc?.setQuality(currentQuality, currentDataMode)
     }
 
@@ -452,10 +456,12 @@ class MonitorService : Service() {
                 "location_once" -> requestLocation("manual")
                 "location_settings" -> {
                     applySettings(payload)
-                    prefs.edit().putBoolean("connectedLocationEnabled", connectedLocationEnabled)
+                    prefs.edit()
+                        .putBoolean("connectedLocationEnabled", connectedLocationEnabled)
                         .putBoolean("idleLocationEnabled", idleLocationEnabled)
                         .putLong("connectedInterval", connectedInterval)
-                        .putLong("idleInterval", idleInterval).apply()
+                        .putLong("idleInterval", idleInterval)
+                        .apply()
                 }
                 "camera" -> (rtc ?: error("映像接続中ではありません。")).switchCamera(payload.optString("facing", "back"))
                 "volume" -> {
@@ -468,6 +474,11 @@ class MonitorService : Service() {
                 "quality", "data_mode" -> {
                     currentQuality = payload.optString("quality", currentQuality)
                     currentDataMode = payload.optString("dataMode", currentDataMode)
+                    // Keep the selected profile across Android activity/service recreation.
+                    prefs.edit()
+                        .putString("currentQuality", currentQuality)
+                        .putString("currentDataMode", currentDataMode)
+                        .apply()
                     rtc?.setQuality(currentQuality, currentDataMode)
                 }
                 "disconnect" -> {
