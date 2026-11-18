@@ -1,20 +1,20 @@
 # Remote Camera v3.8.0 Build Report
 
 - Branch: `rebuild-v3.8-realtime-stability-no-firebase`
-- Build commit: `8699a4f1c79a9b87f074e689333d297b7bcdc3d4`
+- Build commit: `a19623fd8558182c6701d6e51dad1662ff549127`
 - Android application ID: `jp.a09848281.remotecamera.v38preview`
 - Version name: `3.8.0`
 - Version code: `308`
-- Workflow: [Build Android APK #124](https://github.com/a09848281-prog/web/actions/runs/44303726454)
+- Workflow: [Build Android APK #126](https://github.com/a09848281-prog/web/actions/runs/44305341304)
 - Workflow run ID: `44303726454`
 - Artifact: `remote-camera-debug-apk-v3.8`
-- Artifact ID: `14427925259`
+- Artifact ID: `14425809925`
 - Artifact status: successful, not expired
-- Artifact expiry: 2026-12-18 12:31 UTC
-- Artifact ZIP size: `26,085,660` bytes
-- APK size: `50,793,425` bytes
-- ZIP SHA-256: `97a52b116d5dce750d4b9cc2b7d371cd399895cb78ff51583826270714caee0c`
-- APK SHA-256: `73dcbf3c8c89b55f95d9d519c9593a443ae465f58bad986c438598c9220b0e35`
+- Artifact expiry: 2026-12-18 12:36 UTC
+- Artifact ZIP size: `26,086,081` bytes
+- APK size: `50,809,809` bytes
+- ZIP SHA-256: `29169a17bec0336b78b91302b7522cc4d538c5b0c7e3a5111c85e081fce4bdf3`
+- APK SHA-256: `0fb20d5d22189dc41d05cd3acea703a308db77bf5bfb10d8f6a9f49091bd9d4a`
 - Preview URL: https://a09848281-prog.github.io/web/preview/
 - GitHub Pages deployment: [run 44300276881](https://github.com/a09848281-prog/web/actions/runs/44300276881), successful
 - Main branch source/CI validation of the preview-only web assets: [run 44300276804](https://github.com/a09848281-prog/web/actions/runs/44300276804), successful
@@ -22,7 +22,7 @@
 
 ## Installation safety
 
-The v3.8 APK uses a separate application ID (`jp.a09848281.remotecamera.v38preview`) and Android label `Remote Camera 3.8 Preview`. This allows it to be installed side-by-side with the v3.7 app because CI-generated debug APKs use different signing certificates. Do not uninstall the v3.7 app; its pairing and settings remain separate. Pair the v3.8 app with its own newly displayed 8-digit code.
+The v3.8 APK uses a separate application ID (`jp.a09848281.remotecamera.v38preview`) and Android label `Remote Camera 3.8 Preview`. New devices are registered with the `(v3.8 Preview)` suffix so they are easy to distinguish in the Web paired-device list. This allows it to be installed side-by-side with the v3.7 app because CI-generated debug APKs use different signing certificates. Do not uninstall the v3.7 app; its pairing and settings remain separate. Pair the v3.8 app with its own newly displayed 8-digit code.
 
 ## Automated verification
 
@@ -41,6 +41,7 @@ The v3.8 APK uses a separate application ID (`jp.a09848281.remotecamera.v38previ
 | APK manifest ACCESS_NETWORK_STATE permission | PASS |
 | APK manifest CAMERA permission | PASS |
 | APK manifest RECORD_AUDIO permission | PASS |
+| v3.8 Preview launcher and paired-device label check | PASS |
 | Artifact upload | PASS |
 | ZIP integrity test and SHA-256 comparison | PASS |
 | GAS/Web API version mismatch guard | PASS |
