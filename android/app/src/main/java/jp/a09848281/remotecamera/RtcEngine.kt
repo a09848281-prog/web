@@ -94,6 +94,36 @@ class RtcEngine(
         return selected
     }
 
+    private fun createCameraEventsHandler(): CameraVideoCapturer.CameraEventsHandler =
+        object : CameraVideoCapturer.CameraEventsHandler {
+            override fun onCameraError(errorDescription: String) {
+                Log.e("RemoteCameraRTC", "Camera error: " + errorDescription)
+                onState("Androidカメラエラー：" + errorDescription)
+            }
+
+            override fun onCameraDisconnected() {
+                Log.w("RemoteCameraRTC", "Camera disconnected by Android camera service or a higher-priority app")
+                onState("カメラがAndroid側で一時切断されました。他のカメラアプリを閉じて再接続してください")
+            }
+
+            override fun onCameraFreezed(errorDescription: String) {
+                Log.e("RemoteCameraRTC", "Camera frame freeze: " + errorDescription)
+                onState("カメラ映像が停止しました：" + errorDescription)
+            }
+
+            override fun onCameraOpening(cameraName: String) {
+                Log.i("RemoteCameraRTC", "Opening camera: " + cameraName)
+            }
+
+            override fun onFirstFrameAvailable() {
+                Log.i("RemoteCameraRTC", "First camera frame received")
+            }
+
+            override fun onCameraClosed() {
+                Log.i("RemoteCameraRTC", "Camera closed")
+            }
+        }
+
     @Synchronized
     private fun ensureMedia() {
         if (factory != null && videoTrack != null && audioTrack != null && capturer != null) return
@@ -112,7 +142,7 @@ class RtcEngine(
         val names = enumerator.deviceNames
         val selected = chooseWidestBackCamera(enumerator, names)
         frontCamera = enumerator.isFrontFacing(selected)
-        capturer = enumerator.createCapturer(selected, null) ?: error("カメラを開けません。")
+        capturer = enumerator.createCapturer(selected, createCameraEventsHandler()) ?: error("カメラを開けません。")
         helper = SurfaceTextureHelper.create("RemoteCameraCapture", egl!!.eglBaseContext)
         capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
         val profile = profileFor(currentQuality, currentDataMode)
@@ -124,7 +154,7 @@ class RtcEngine(
         } catch (first: Exception) {
             Log.w("RemoteCameraRTC", "Preferred 16:9 format failed; retrying 960x540", first)
             try { capturer?.dispose() } catch (_: Exception) {}
-            capturer = enumerator.createCapturer(selected, null) ?: throw first
+            capturer = enumerator.createCapturer(selected, createCameraEventsHandler()) ?: throw first
             capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
             try {
                 capturer!!.startCapture(960, 540, 20)
@@ -134,7 +164,7 @@ class RtcEngine(
             } catch (second: Exception) {
                 Log.w("RemoteCameraRTC", "960x540 failed; retrying 640x360", second)
                 try { capturer?.dispose() } catch (_: Exception) {}
-                capturer = enumerator.createCapturer(selected, null) ?: throw second
+                capturer = enumerator.createCapturer(selected, createCameraEventsHandler()) ?: throw second
                 capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
                 capturer!!.startCapture(640, 360, 15)
                 captureWidth = 640
