@@ -731,7 +731,7 @@ function updateAdaptiveQuality(loss, fps, rttMs) {
 }
 
 function setReceiveVolume(value, persist = true) {
-  S.receiveVolume = Math.max(0, Math.min(100, Number(value) || 0));
+  S.receiveVolume = Math.max(0, Math.min(200, Number(value) || 0));
   $("volume").value = String(S.receiveVolume);
   $("volumeValue").textContent = S.receiveVolume + "%";
   if (S.remoteGain && S.audioContext) {
