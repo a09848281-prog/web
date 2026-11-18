@@ -60,3 +60,7 @@
  .side{position:sticky;top:76px;align-self:start}
  .view{min-height:calc(100vh - 92px)}
 }
+
+.pairQuick{background:#edf3fd;color:#2456a3;border:1px solid #cadbf4;padding:7px 10px;min-height:34px;font-size:12px}
+@media(max-width:900px){.pairQuick{flex:1}}
+@media(max-width:560px){.pairQuick{width:100%;min-height:40px}}
