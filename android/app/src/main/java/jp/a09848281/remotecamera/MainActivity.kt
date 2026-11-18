@@ -33,7 +33,7 @@ class MainActivity : Activity() {
     private lateinit var keepAwakeSwitch: Switch
     private var selectedWaitMode = "standard"
     private val waitModeKeys = listOf("eco", "standard", "fast")
-    private val waitModeLabels = listOf("省電力：60秒ごとに確認", "標準：15秒ごとに確認", "応答優先：5秒ごとに確認")
+    private val waitModeLabels = listOf("省電力：30秒ごとに確認", "標準：6秒ごとに確認", "応答優先：2秒ごとに確認")
     private var gasUrl = ""
     private val prefs by lazy { getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE) }
 
@@ -240,9 +240,9 @@ class MainActivity : Activity() {
     }
 
     private fun waitModeDescription(): String = when (selectedWaitMode) {
-        "eco" -> "省電力・60秒間隔"
-        "fast" -> "応答優先・5秒間隔"
-        else -> "標準・15秒間隔"
+        "eco" -> "省電力・30秒間隔"
+        "fast" -> "応答優先・2秒間隔"
+        else -> "標準・6秒間隔"
     }
 
     private fun applyLocalSettingsToService() {
@@ -275,8 +275,8 @@ class MainActivity : Activity() {
         val micOk = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val locationOk = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!cameraOk || !micOk || !locationOk) {
-            Toast.makeText(this, "先に必要な権限を許可してから監視待機を開始してください。", Toast.LENGTH_LONG).show()
+        if (!cameraOk || !micOk) {
+            Toast.makeText(this, "カメラとマイクの権限を許可してから操作してください。位置情報は任意です。", Toast.LENGTH_LONG).show()
             requestStart()
             return
         }
