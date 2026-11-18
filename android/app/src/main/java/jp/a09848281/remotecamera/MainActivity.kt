@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var stopButton: Button
     private lateinit var waitModeSpinner: Spinner
     private lateinit var remoteCaptureSwitch: Switch
+    private lateinit var keepAwakeSwitch: Switch
     private var selectedWaitMode = "standard"
     private val waitModeKeys = listOf("eco", "standard", "fast")
     private val waitModeLabels = listOf("省電力：60秒ごとに確認", "標準：15秒ごとに確認", "応答優先：5秒ごとに確認")
@@ -90,6 +91,15 @@ class MainActivity : Activity() {
             }
         }
 
+        keepAwakeSwitch = Switch(this).apply {
+            text = "画面OFF中も通信を維持（安定優先・電池消費増）"
+            isChecked = prefs.getBoolean("keepCpuAwake", false)
+            setOnCheckedChangeListener { _, enabled ->
+                prefs.edit().putBoolean("keepCpuAwake", enabled).apply()
+                applyLocalSettingsToService()
+            }
+        }
+
         waitModeSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@MainActivity,
@@ -119,6 +129,7 @@ class MainActivity : Activity() {
             setPadding(0, 18, 0, 6)
         })
         root.addView(remoteCaptureSwitch)
+        root.addView(keepAwakeSwitch)
         root.addView(TextView(this).apply {
             text = "Webからの接続要求を確認する間隔"
             textSize = 14f
@@ -169,6 +180,7 @@ class MainActivity : Activity() {
         prefs.edit()
             .putString("waitMode", selectedWaitMode)
             .putBoolean("remoteCaptureEnabled", remoteCaptureSwitch.isChecked)
+            .putBoolean("keepCpuAwake", keepAwakeSwitch.isChecked)
             .apply()
         val requested = mutableListOf(
             Manifest.permission.CAMERA,
@@ -239,6 +251,7 @@ class MainActivity : Activity() {
             action = MonitorService.ACTION_UPDATE_LOCAL_SETTINGS
             putExtra(MonitorService.EXTRA_WAIT_MODE, selectedWaitMode)
             putExtra(MonitorService.EXTRA_REMOTE_CAPTURE_ENABLED, remoteCaptureSwitch.isChecked)
+            putExtra(MonitorService.EXTRA_KEEP_CPU_AWAKE, keepAwakeSwitch.isChecked)
         }
         try {
             startService(intent)
