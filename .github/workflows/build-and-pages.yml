@@ -194,7 +194,8 @@ jobs:
           const gradle = fs.readFileSync('android/app/build.gradle.kts', 'utf8');
           const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
           const workflow = fs.readFileSync('.github/workflows/build-and-pages.yml', 'utf8');
-          if (!/versionCode\s*=\s*308/.test(gradle) ||
+          if (!/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v38preview"/.test(gradle) ||
+              !/versionCode\s*=\s*308/.test(gradle) ||
               !/versionName\s*=\s*"3\.8\.0"/.test(gradle) ||
               config.appVersion !== '3.8.0' ||
               !workflow.includes('name: remote-camera-debug-apk-v3.8')) {
