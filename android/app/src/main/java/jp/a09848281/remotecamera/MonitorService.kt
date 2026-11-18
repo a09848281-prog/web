@@ -41,6 +41,7 @@ class MonitorService : Service() {
         const val EXTRA_REMOTE_CAPTURE_ENABLED = "remote_capture_enabled"
         const val EXTRA_KEEP_CPU_AWAKE = "keep_cpu_awake"
         const val EXTRA_LOCAL_DATA_MODE = "local_data_mode"
+        const val EXTRA_AUDIO_PICKUP_MODE = "audio_pickup_mode"
         const val EXTRA_CODE = "registration_code"
         const val EXTRA_DEVICE_ID = "device_id"
         private const val CHANNEL = "remote_camera_monitor"
@@ -64,11 +65,26 @@ class MonitorService : Service() {
     private var currentCaptureRatio = "16:9"
     private var currentFpsLimit = 24
     private var localDataMode = "web"
+    private var audioPickupMode = "ambient"
+    private var rtcAudioPickupMode: String? = null
     private var lastLocationAttempt = 0L
     private var lastCodeRefresh = 0L
     private val apiReady = CompletableDeferred<Unit>()
     private val locationRequestActive = java.util.concurrent.atomic.AtomicBoolean(false)
     private var cpuWakeLock: PowerManager.WakeLock? = null
+
+    private fun normalizeAudioPickupMode(value: String?): String =
+        value?.takeIf { it in listOf("ambient", "balanced", "voice") } ?: "ambient"
+
+    private fun recycleRtcForPendingAudioModeIfIdle() {
+        if (rtc != null && rtc?.hasPeers() != true && rtcAudioPickupMode != audioPickupMode) {
+            try { rtc?.dispose() } catch (e: Exception) {
+                Log.w("RemoteCameraService", "Could not recycle inactive RTC engine for audio mode update", e)
+            }
+            rtc = null
+            rtcAudioPickupMode = null
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -90,6 +106,7 @@ class MonitorService : Service() {
                 return START_NOT_STICKY
             }
             localDataMode = prefs.getString("localDataMode", "web") ?: "web"
+            audioPickupMode = normalizeAudioPickupMode(prefs.getString("audioPickupMode", "ambient"))
             return try {
                 startMonitoringForeground()
                 if (pollJob?.isActive != true) pollJob = scope.launch { pollLoop() }
@@ -121,21 +138,27 @@ class MonitorService : Service() {
                 ?: prefs.getString("localDataMode", "web") ?: "web"
             if (localDataMode !in listOf("web", "ultra", "save", "standard", "high")) localDataMode = "web"
             if (localDataMode != "web") currentDataMode = localDataMode
+            audioPickupMode = normalizeAudioPickupMode(
+                startIntent.getStringExtra(EXTRA_AUDIO_PICKUP_MODE) ?: prefs.getString("audioPickupMode", "ambient")
+            )
             prefs.edit()
                 .putString("waitMode", if (mode in listOf("eco", "standard", "fast")) mode else "standard")
                 .putBoolean("remoteCaptureEnabled", remoteEnabled)
                 .putBoolean("keepCpuAwake", keepAwake)
                 .putString("localDataMode", localDataMode)
+                .putString("audioPickupMode", audioPickupMode)
                 .putString("currentDataMode", currentDataMode)
                 .apply()
+            recycleRtcForPendingAudioModeIfIdle()
             rtc?.setVideoProfile(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)
             updateCpuWakeLock(keepAwake)
             if (!remoteEnabled) {
                 rtc?.dispose()
                 rtc = null
+                rtcAudioPickupMode = null
                 notifyState("遠隔カメラ・マイクはスマホ設定でOFFです。待機通信は継続しています")
             } else {
-                notifyState("遠隔カメラ・マイクの起動を許可しました。待機中は撮影・録音していません")
+                notifyState(if (rtc?.hasPeers() == true && rtcAudioPickupMode != audioPickupMode) "マイクモードを保存しました。現在の接続を維持し、次回接続時に反映します" else "遠隔カメラ・マイクの起動を許可しました。待機中は撮影・録音していません")
             }
             return START_STICKY
         }
@@ -152,6 +175,9 @@ class MonitorService : Service() {
         }
         localDataMode = startIntent.getStringExtra(EXTRA_LOCAL_DATA_MODE)
             ?: prefs.getString("localDataMode", "web") ?: "web"
+        audioPickupMode = normalizeAudioPickupMode(
+            startIntent.getStringExtra(EXTRA_AUDIO_PICKUP_MODE) ?: prefs.getString("audioPickupMode", "ambient")
+        )
         if (localDataMode !in listOf("web", "ultra", "save", "standard", "high")) localDataMode = "web"
         prefs.edit().putString("gasUrl", gasUrl).putString("localDataMode", localDataMode).apply()
         startMonitoringForeground()
@@ -343,9 +369,11 @@ class MonitorService : Service() {
                                             }
                                             continue
                                         }
+                                        recycleRtcForPendingAudioModeIfIdle()
                                         if (rtc == null) {
                                             val currentApi = api ?: continue
-                                            rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState) { message ->
+                                            rtc = RtcEngine(this, currentApi, deviceId, secret, audioPickupMode, scope, ::notifyState) { message ->
+                                                rtcAudioPickupMode = audioPickupMode
                                                 val name = message.optString("name")
                                                 val payload = message.optJSONObject("payload") ?: JSONObject()
                                                 val requestId = message.optString("requestId")
@@ -374,6 +402,7 @@ class MonitorService : Service() {
                                 }
                                 "bye" -> {
                                     rtc?.closeSession(signal.optString("sessionId"))
+                                    recycleRtcForPendingAudioModeIfIdle()
                                     notifyState("Web側から切断要求を受信しました")
                                 }
                             }
@@ -529,6 +558,7 @@ class MonitorService : Service() {
                 "disconnect" -> {
                     rtc?.dispose()
                     rtc = null
+                    rtcAudioPickupMode = null
                     notifyState("監視待機中")
                 }
             }
@@ -702,6 +732,7 @@ class MonitorService : Service() {
         locationJob?.cancel()
         rtc?.dispose()
         rtc = null
+        rtcAudioPickupMode = null
         releaseCpuWakeLock()
         prefs.edit().putBoolean("monitoringEnabled", false).apply()
         scope.cancel()
