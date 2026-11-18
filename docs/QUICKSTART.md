@@ -14,8 +14,9 @@
 ## 2. GitHub Pages
 1. GitHubリポジトリの Settings → Pages を開きます。
 2. Build and deployment の Source を GitHub Actions にします。
-3. Actions → Deploy Web Pages を実行します。
-4. 公開URL： https://a09848281-prog.github.io/web/
+3. Actions → Deploy Web Pages を実行します（公開デプロイは main ブランチからのみ実行します）。
+4. v3.7の作業ブランチは検証用であり、mainへ反映するまでは公開Pagesには反映されません。
+5. 公開URL： https://a09848281-prog.github.io/web/
 
 ## 3. Androidの準備
 1. GitHub Actionsで `rebuild-v3.7-stability-ui` ブランチの最新成功した `Build Android APK` 実行を開き、Artifact `remote-camera-debug-apk-v3.7` を取得してインストールします。
