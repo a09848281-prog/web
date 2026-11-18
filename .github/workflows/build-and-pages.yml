@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, rebuild-v3.5-remote-standby]
+    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location]
     paths:
       - "android/**"
       - "web/**"
@@ -65,7 +65,7 @@ jobs:
           if (!android.includes('ACTION_STOP') || !android.includes('addAction(') ||
               !android.includes('stopMonitoringNow(') ||
               !android.includes('Offer handling failed; keep foreground service alive') ||
-              !rtc.includes('retrying conservative VGA mode') ||
+              !rtc.includes('retrying 960x540') ||
               !main.includes('refreshMonitoringButtons') ||
               !main.includes('GASでペアリング確認済み')) {
             throw new Error('Background stop action, RTC recovery, or server-verified pairing state is missing.');
@@ -87,10 +87,27 @@ jobs:
               !rtc.includes('fun closeSession(')) {
             throw new Error('Unpair/revoke or clean disconnect flow is incomplete.');
           }
-          if (!rtc.includes('changeCaptureFormat')) {
-            throw new Error('Camera resolution changes are not applied to the capturer.');
+          if (!rtc.includes('changeCaptureFormat') ||
+              !rtc.includes('chooseWidestBackCamera') ||
+              !rtc.includes('stun:stun.l.google.com:19302') ||
+              !rtc.includes('VideoProfile(1280, 720, 24')) {
+            throw new Error('Wide-angle camera preference, 16:9 profiles or STUN configuration is missing.');
           }
-          console.log('HTML IDs, nested GAS bridge, API compatibility, pairing state, background stop action, DB health and camera controls OK.');
+          if (!android.includes('acquireBestLocation') ||
+              !android.includes('requestLocationUpdates') ||
+              !android.includes('LocationManager.GPS_PROVIDER') ||
+              !android.includes('LocationManager.NETWORK_PROVIDER') ||
+              !main.includes('カメラとマイクの権限は必須、位置情報は任意です')) {
+            throw new Error('Optional location permission or dual-provider location acquisition is missing.');
+          }
+          for (const id of ['fullscreen','fitMode','viewerZoom','connectionMetrics','sessionDuration','mapFollow','copyLocation']) {
+            if (!ids.includes(id) || !app.includes(id)) throw new Error('Missing v3.6 viewer feature: ' + id);
+          }
+          if (!app.includes('scheduleReconnect') || !app.includes('collectConnectionStats') ||
+              !app.includes('stun:stun.l.google.com:19302')) {
+            throw new Error('Web reconnect, diagnostics or STUN feature is missing.');
+          }
+          console.log('v3.6: wide camera selection, 16:9 profiles, STUN, optional dual-provider location, auto-reconnect, diagnostics and viewer controls OK.');
           NODE
       - name: Build Android debug APK
         working-directory: android
@@ -114,7 +131,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-camera-debug-apk-v3.5
+          name: remote-camera-debug-apk-v3.6
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
