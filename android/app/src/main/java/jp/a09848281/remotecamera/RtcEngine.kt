@@ -1,6 +1,8 @@
 package jp.a09848281.remotecamera
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -103,6 +105,14 @@ class RtcEngine(
 
     fun handleOffer(sessionId: String, sdp: String) {
         try {
+            val networkStateGranted =
+                context.checkSelfPermission(Manifest.permission.ACCESS_NETWORK_STATE) == PackageManager.PERMISSION_GRANTED
+            if (!networkStateGranted) {
+                Log.e("RemoteCameraRTC", "ACCESS_NETWORK_STATE is missing; refusing to enter native WebRTC networking")
+                onState("WebRTC接続を中止しました：ネットワーク状態の権限がAPKに含まれていません。最新版APKを再インストールしてください")
+                return
+            }
+            Log.i("RemoteCameraRTC", "ACCESS_NETWORK_STATE permission verified before WebRTC initialization")
             peers.remove(sessionId)?.close()
             ensureMedia()
             val config = PeerConnection.RTCConfiguration(emptyList()).apply {
