@@ -1,14 +1,14 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase, rebuild-v3.9-camera-controls-stability, rebuild-v4.0-ambient-audio-ptt]
+    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase, rebuild-v3.9-camera-controls-stability, rebuild-v4.0-ambient-audio-ptt, rebuild-v4.1-complete-stable]
     paths:
       - "android/**"
       - "web/**"
       - "gas/**"
       - ".github/workflows/**"
   pull_request:
-    branches: [rebuild-v3.9-camera-controls-stability]
+    branches: [rebuild-v3.9-camera-controls-stability, rebuild-v4.0-ambient-audio-ptt]
     paths:
       - "android/**"
       - "web/**"
@@ -170,7 +170,7 @@ jobs:
               !rtc.includes('delay(8000L)')) {
             throw new Error('v3.8 Android data-channel command receiver or ICE recovery grace timer is missing.');
           }
-          if (!android.includes('" (v4.0 Preview)"') ||
+          if (!android.includes('" (v4.1 Preview)"') ||
               !manifest.includes('android:label="Remote Camera 4.0 Preview"')) {
             throw new Error('v3.8 preview app must be clearly distinguishable in Android launcher and paired-device list.');
           }
@@ -225,30 +225,30 @@ jobs:
               !android.includes('EXTRA_LOCAL_DATA_MODE') ||
               !android.includes('"flashlight" ->') ||
               !android.includes('put("type", "command_result")') ||
-              !android.includes('v4.0 Preview')) {
+              !android.includes('v4.1 Preview')) {
             throw new Error('v3.9 Android local standby data-mode selector or command response flow is missing.');
           }
           if (!gas.includes('captureRatio:') || !gas.includes('fpsLimit:') ||
-              !gas.includes('"flashlight"') || !gas.includes('3.9.0')) {
+              !gas.includes('"flashlight"') || !gas.includes('4.1.0')) {
             throw new Error('v3.9 GAS compatibility, saved capture settings or flashlight command is missing.');
           }
           console.log('v3.9 aspect/FPS settings, audio input route, flash control, five viewer features, fullscreen restoration, and Firebase-free dependencies OK.');
           NODE
-      - name: Verify v4.0 Android and Web version alignment
+      - name: Verify v4.1 Android and Web version alignment
         run: |
           node <<'NODE'
           const fs = require('fs');
           const gradle = fs.readFileSync('android/app/build.gradle.kts', 'utf8');
           const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
           const workflow = fs.readFileSync('.github/workflows/build-and-pages.yml', 'utf8');
-          if (!/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v40preview"/.test(gradle) ||
-              !/versionCode\s*=\s*400/.test(gradle) ||
-              !/versionName\s*=\s*"4\.0\.0"/.test(gradle) ||
-              config.appVersion !== '4.0.0' ||
-              !workflow.includes('name: remote-camera-debug-apk-v4.0')) {
-            throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v4.0.0.');
+          if (!/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v41preview"/.test(gradle) ||
+              !/versionCode\s*=\s*410/.test(gradle) ||
+              !/versionName\s*=\s*"4\.1\.0"/.test(gradle) ||
+              config.appVersion !== '4.1.0' ||
+              !workflow.includes('name: remote-camera-debug-apk-v4.1')) {
+            throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v4.1.0.');
           }
-          console.log('Android 4.0.0 / versionCode 400 / Web 4.0.0 / APK artifact v4.0 are aligned.');
+          console.log('Android 4.1.0 / versionCode 410 / Web 4.1.0 / APK artifact v4.1 are aligned.');
           NODE
       - name: Build Android debug APK
         working-directory: android
