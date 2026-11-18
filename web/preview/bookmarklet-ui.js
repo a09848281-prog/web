@@ -29,7 +29,7 @@
     .body{position:relative;flex:1;min-height:0;background:#eef2f7}
     iframe{display:block;width:100%;height:100%;border:0;background:#eef2f7}
     .panel.min{height:48px!important;min-height:48px;width:min(420px,calc(100vw - 28px))}
-    .panel.min .body{display:none}
+    .panel.min .body{visibility:hidden;position:absolute;inset:48px 0 0;pointer-events:none}
     .tip{position:absolute;left:10px;bottom:10px;z-index:2;background:#101827dd;color:#fff;border-radius:8px;padding:6px 9px;font-size:11px;pointer-events:none}
     @media(max-width:640px){.panel{inset:0;width:100vw;height:100dvh;min-width:0;min-height:0;border-radius:0;border:0}.panel.min{inset:auto 8px 8px 8px;width:auto;height:48px!important}.bar{height:48px;min-height:48px}.tip{display:none}}
   `;
@@ -48,7 +48,7 @@
     </div>
     <div class="body">
       <iframe title="Remote Camera v3.8 Web" allow="camera; microphone; geolocation; autoplay; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
-      <div class="tip">閉じると接続も終了します。最小化なら接続を維持できます。</div>
+      <div class="tip">閉じると接続も終了します。最小化は画面を隠してiframeを残します。</div>
     </div>`;
   shadow.appendChild(panel);
 
