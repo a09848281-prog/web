@@ -534,9 +534,15 @@ class MonitorService : Service() {
                 "volume" -> {
                     val percent = payload.optInt("percent", 70).coerceIn(0, 100)
                     val audio = getSystemService(AUDIO_SERVICE) as AudioManager
-                    val stream = AudioManager.STREAM_VOICE_CALL
+                    // Match the Android output stream to the selected microphone/audio route.
+                    val stream = if (audioPickupMode == "voice") {
+                        AudioManager.STREAM_VOICE_CALL
+                    } else {
+                        AudioManager.STREAM_MUSIC
+                    }
                     val max = audio.getStreamMaxVolume(stream)
-                    audio.setStreamVolume(stream, (max * percent / 100.0).toInt(), 0)
+                    val target = (max * percent / 100.0).toInt().coerceIn(0, max)
+                    audio.setStreamVolume(stream, target, 0)
                 }
                 "quality", "data_mode" -> {
                     currentQuality = payload.optString("quality", currentQuality)
