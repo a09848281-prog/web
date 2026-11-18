@@ -7,6 +7,13 @@ on:
       - "web/**"
       - "gas/**"
       - ".github/workflows/**"
+  pull_request:
+    branches: [rebuild-v3.9-camera-controls-stability]
+    paths:
+      - "android/**"
+      - "web/**"
+      - "gas/**"
+      - ".github/workflows/**"
   workflow_dispatch:
 permissions:
   contents: read
