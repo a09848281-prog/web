@@ -229,6 +229,8 @@ function setControlsEnabled(enabled) {
   $("disconnect").disabled = !S.pc;
   $("camera").disabled = !enabled || !S.pc;
   $("ptt").disabled = !S.pc;
+  $("pttLock").disabled = !S.pc;
+  $("remoteMute").disabled = !S.pc;
   $("snapshot").disabled = !S.pc;
   $("refreshStatus").disabled = !S.pc;
   if (!S.pc) updateFlashlightButton(false, false);
