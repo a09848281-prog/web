@@ -185,7 +185,7 @@ jobs:
           }
           console.log('v3.8 direct WebRTC controls, local iPad audio gain, video watchdog, bounded GAS retries, optimized Sheets reads and Firebase-free dependencies OK.');
           NODE
-      - name:       - name: Verify v3.8 Android and Web version alignment
+      - name: Verify v3.8 Android and Web version alignment
         run: |
           node <<'NODE'
           const fs = require('fs');
