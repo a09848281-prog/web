@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="./app.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-<script defer src="./app.js?v=3.7.0"></script>
+<script defer src="./app.js?v=3.8.0"></script>
 </head>
 <body>
 <header class="top">
@@ -40,7 +40,7 @@
         </select></label>
         <p class="hint">接続中の画質変更は送信レートを先に変更します。解像度の切り替えは次回接続から適用し、映像停止を抑えます。</p>
         <label>カメラ<select id="camera"><option value="back">背面</option><option value="front">前面</option></select></label>
-        <label>Android音量 <output id="volumeValue">70%</output><input id="volume" type="range" min="0" max="100" value="70"></label>
+        <label>受信音量（iPad） <output id="volumeValue">70%</output><input id="volume" type="range" min="0" max="100" value="70"></label>
       </div>
     </details>
 
@@ -98,7 +98,7 @@
     <div id="videoPane" class="videoPane">
       <video id="remoteVideo" autoplay playsinline></video>
       <div id="placeholder"><b>映像はまだありません</b><small>Androidで監視待機を開始してから接続してください。</small></div>
-      <footer><span id="streamState">待機中</span><span id="iceState">ICE: --</span></footer>
+      <footer><span id="streamState">待機中</span><span id="videoState">映像待機中</span><span id="iceState">ICE: --</span></footer>
     </div>
     <div id="mapPane" class="hidden">
       <div class="mapTools">
