@@ -869,16 +869,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       const health = await api("health");
       if (!health.databaseReady) {
         $("pair").disabled = true;
+        $("pairQuick").disabled = true;
         setControlsEnabled(false);
         status("GAS接続済み・DB未設定");
         toast(health.message || "GASのsetupDatabase()を実行し、最新バージョンをデプロイしてください。");
       } else {
         $("pair").disabled = false;
+        $("pairQuick").disabled = false;
         refreshDeviceList();
         status(S.device ? "ペアリング済み" : "GAS接続済み・端末未登録", true);
       }
     } catch (healthError) {
       $("pair").disabled = true;
+      $("pairQuick").disabled = true;
       setControlsEnabled(false);
       status("GAS応答なし");
       toast("GASへのPOST応答を確認できません: " + (healthError && healthError.message ? healthError.message : "不明な通信エラー") + "。Code.gsの更新・再デプロイも確認してください。");
@@ -886,6 +889,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   } catch (error) {
     $("pair").disabled = true;
+    $("pairQuick").disabled = true;
     setControlsEnabled(false);
     toast(error.message);
     status("設定エラー");
