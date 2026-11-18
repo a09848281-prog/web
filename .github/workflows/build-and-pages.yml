@@ -164,8 +164,8 @@ jobs:
             throw new Error('v3.8 Android data-channel command receiver or ICE recovery grace timer is missing.');
           }
           if (!android.includes('" (v3.9 Preview)"') ||
-              !manifest.includes('android:label="Remote Camera 3.9 Preview"')) {
-            throw new Error('v3.8 preview app must be clearly distinguishable in Android launcher and paired-device list.');
+              !manifest.includes('android:label="Remote Camera 3.10 Preview"')) {
+            throw new Error('v3.10 preview app must be clearly distinguishable in Android launcher and paired-device list.');
           }
           if (!android.includes('rtc?.hasConnectedPeer() == true') ||
               !android.includes('locationRequestActive') ||
