@@ -38,6 +38,7 @@ class RtcEngine(
     private var captureHeight = 720
     private var captureFps = 24
     private val cameraRecoveryScheduled = AtomicBoolean(false)
+    private var deferredFormatMessageFor: String? = null
 
     private data class VideoProfile(
         val width: Int, val height: Int, val fps: Int, val bitrate: Int
@@ -217,6 +218,7 @@ class RtcEngine(
         captureWidth = profile.width
         captureHeight = profile.height
         captureFps = profile.fps
+        deferredFormatMessageFor = null
         try {
             capturer!!.startCapture(profile.width, profile.height, profile.fps)
         } catch (first: Exception) {
@@ -331,6 +333,7 @@ class RtcEngine(
 
             videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
             peer.addTrack(audioTrack, listOf("remote-camera"))
+            applySenderParameters(profileFor(currentQuality, currentDataMode))
             peer.setRemoteDescription(object : SdpObserver {
                 override fun onSetSuccess() {
                     peer.createAnswer(object : SdpObserver {
@@ -394,8 +397,12 @@ class RtcEngine(
     }
 
     fun setQuality(quality: String, dataMode: String) {
-        currentQuality = quality
-        currentDataMode = dataMode
+        val normalizedQuality = if (quality in listOf("auto", "360", "480", "720", "1080")) quality else "720"
+        val normalizedMode = if (dataMode in listOf("auto", "ultra", "save", "standard", "high")) dataMode else "standard"
+        if (normalizedQuality == currentQuality && normalizedMode == currentDataMode) return
+
+        currentQuality = normalizedQuality
+        currentDataMode = normalizedMode
         val profile = profileFor(currentQuality, currentDataMode)
         val camera = capturer
         val formatChanged = camera != null &&
@@ -409,16 +416,25 @@ class RtcEngine(
                 captureWidth = profile.width
                 captureHeight = profile.height
                 captureFps = profile.fps
+                deferredFormatMessageFor = null
             } catch (e: Exception) {
                 Log.w("RemoteCameraRTC", "Could not change camera capture format while idle", e)
                 onState("画質設定は保存しました。カメラ解像度は次回接続時に適用します。")
             }
         } else if (formatChanged && peers.isNotEmpty()) {
-            onState("画質設定を受け付けました。送信レートは即時変更し、解像度は次回接続時に適用します。")
+            val key = "${profile.width}x${profile.height}@${profile.fps}/${profile.bitrate}"
+            if (deferredFormatMessageFor != key) {
+                deferredFormatMessageFor = key
+                onState("画質設定を受け付けました。送信レートは即時変更し、解像度は次回接続時に適用します。")
+            }
         }
 
         // Bitrate and maximum send frame rate are updated on the sender without
         // stopping Camera2. Resolution changes are intentionally deferred.
+        applySenderParameters(profile)
+    }
+
+    private fun applySenderParameters(profile: VideoProfile) {
         videoSenders.values.forEach { sender ->
             try {
                 val params = sender.parameters
