@@ -12,3 +12,51 @@
 .mapTools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:12px}
 .mapTools .check{margin:0;font-size:12px}
 @media(max-width:650px){.viewerControls{gap:5px}.viewerControls button{flex:1}.zoomControl{flex:1 1 100%;justify-content:flex-start}.zoomControl input{flex:1}#sessionDuration{flex:1 1 100%}.metrics{line-height:1.6}}
+
+/* v3.7 controller layout */
+.deviceCard{padding:2px 0 12px;border-bottom:1px solid #e5eaf1}
+.settingsGroup{border-bottom:1px solid #e5eaf1;padding:2px 0}
+.settingsGroup>summary{cursor:pointer;list-style:none;padding:12px 4px;font-size:13px;font-weight:800;color:#293b55;user-select:none}
+.settingsGroup>summary::-webkit-details-marker{display:none}
+.settingsGroup>summary:after{content:"＋";float:right;color:#72829a}
+.settingsGroup[open]>summary:after{content:"−"}
+.settingsBody{padding:0 4px 12px}
+.settingsBody label{margin:9px 0}
+.settingsBody .hint{margin:5px 0 10px}
+.side{padding:14px}
+.viewHeaderActions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.monitorButtons,.viewTabs{display:flex;align-items:center;gap:6px}
+.monitorButtons button{min-width:92px}
+.viewTabs button{min-width:58px}
+.viewhead{align-items:flex-start}
+.viewhead>div:first-child{min-width:0}
+.viewhead h2{overflow-wrap:anywhere}
+.viewTabs button.active{background:#dce8fc;color:#1d4d9b}
+.monitorButtons #connect{box-shadow:0 4px 12px #2865d626}
+.side .deviceCard .hint{margin-bottom:2px}
+.side .settingsGroup select{width:100%}
+@media(max-width:900px){
+ .app{grid-template-columns:minmax(0,1fr);gap:9px;padding:8px}
+ .view{order:0;min-height:56vh}
+ .side{order:1;max-height:none;overflow:visible}
+ .viewHeaderActions{width:100%;justify-content:space-between}
+ .viewhead{flex-wrap:wrap}
+ .videoPane{min-height:52vh}
+ .videoPane video{max-height:68vh;object-fit:contain}
+}
+@media(max-width:560px){
+ .top{height:54px}
+ .view{padding:10px}
+ .viewhead h2{font-size:17px}
+ .viewHeaderActions{align-items:stretch;flex-direction:column}
+ .monitorButtons button{flex:1}
+ .viewTabs{justify-content:flex-start}
+ .viewerControls button{flex:1 1 auto}
+ .videoPane{min-height:42vh}
+ .side{padding:11px}
+ .settingsGroup>summary{padding:13px 4px}
+}
+@media(min-width:901px){
+ .side{position:sticky;top:76px;align-self:start}
+ .view{min-height:calc(100vh - 92px)}
+}
