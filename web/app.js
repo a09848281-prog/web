@@ -29,6 +29,7 @@ const S = {
   statsBusy: false,
   previousStats: null,
   statsFreezeCount: 0,
+  hasReceivedVideoFrame: false,
   sessionTimer: null,
   connectedAt: 0
 };
@@ -288,6 +289,7 @@ function stopStatsMonitor() {
   S.statsTimer = null;
   S.previousStats = null;
   S.statsFreezeCount = 0;
+  S.hasReceivedVideoFrame = false;
   S.statsBusy = false;
   if ($("connectionMetrics")) $("connectionMetrics").textContent = "通信状態：未接続";
 }
@@ -317,6 +319,7 @@ async function collectConnectionStats(pc) {
     };
     const previous = S.previousStats;
     S.previousStats = current;
+    if (!previous && current.frames > 0) S.hasReceivedVideoFrame = true;
     const rttMs = candidatePair && Number.isFinite(Number(candidatePair.currentRoundTripTime))
       ? Math.round(Number(candidatePair.currentRoundTripTime) * 1000) : null;
     if (!previous) {
@@ -327,7 +330,12 @@ async function collectConnectionStats(pc) {
     const bitrate = Math.max(0, (current.bytes - previous.bytes) * 8 / elapsed / 1000);
     const decodedDelta = Math.max(0, current.frames - previous.frames);
     const fps = decodedDelta / elapsed;
-    if (decodedDelta < 1) {
+    if (decodedDelta > 0) {
+      S.hasReceivedVideoFrame = true;
+      S.statsFreezeCount = 0;
+    } else if (S.hasReceivedVideoFrame) {
+      // Only report a freeze after at least one remote frame has arrived.
+      // This prevents a slow first-frame negotiation from triggering retries.
       S.statsFreezeCount += 1;
     } else {
       S.statsFreezeCount = 0;
@@ -466,6 +474,8 @@ async function connect(automatic = false) {
     localAudioTrack.enabled = false;
     S.session = rid();
     S.seq = 0;
+    S.statsFreezeCount = 0;
+    S.hasReceivedVideoFrame = false;
     // STUN can improve NAT traversal. A TURN relay is still needed on networks
     // that block direct peer-to-peer UDP traffic.
     const pc = new RTCPeerConnection({
