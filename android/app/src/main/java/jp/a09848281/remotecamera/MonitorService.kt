@@ -264,6 +264,13 @@ class MonitorService : Service() {
             if (!apiReady.isCompleted) apiReady.complete(Unit)
             var consecutiveFailures = 0
             while (scope.isActive) {
+                // Once WebRTC is healthy, stop polling GAS. Active controls use
+                // the peer-to-peer data channel; if ICE drops, the loop resumes
+                // GAS polling after RtcEngine marks the peer disconnected.
+                if (rtc?.hasConnectedPeer() == true) {
+                    delay(1000L)
+                    continue
+                }
                 try {
                     val deviceId = prefs.getString("deviceId", "") ?: ""
                     val secret = prefs.getString("deviceSecret", "") ?: ""
