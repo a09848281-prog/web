@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
@@ -38,6 +39,7 @@ class MonitorService : Service() {
         const val EXTRA_GAS_URL = "gas_url"
         const val EXTRA_WAIT_MODE = "wait_mode"
         const val EXTRA_REMOTE_CAPTURE_ENABLED = "remote_capture_enabled"
+        const val EXTRA_KEEP_CPU_AWAKE = "keep_cpu_awake"
         const val EXTRA_CODE = "registration_code"
         const val EXTRA_DEVICE_ID = "device_id"
         private const val CHANNEL = "remote_camera_monitor"
@@ -61,6 +63,7 @@ class MonitorService : Service() {
     private var lastLocationAttempt = 0L
     private var lastCodeRefresh = 0L
     private val apiReady = CompletableDeferred<Unit>()
+    private var cpuWakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -105,10 +108,15 @@ class MonitorService : Service() {
             }
             val mode = startIntent.getStringExtra(EXTRA_WAIT_MODE) ?: "standard"
             val remoteEnabled = startIntent.getBooleanExtra(EXTRA_REMOTE_CAPTURE_ENABLED, true)
+            val keepAwake = startIntent.getBooleanExtra(
+                EXTRA_KEEP_CPU_AWAKE, prefs.getBoolean("keepCpuAwake", false)
+            )
             prefs.edit()
                 .putString("waitMode", if (mode in listOf("eco", "standard", "fast")) mode else "standard")
                 .putBoolean("remoteCaptureEnabled", remoteEnabled)
+                .putBoolean("keepCpuAwake", keepAwake)
                 .apply()
+            updateCpuWakeLock(keepAwake)
             if (!remoteEnabled) {
                 rtc?.dispose()
                 rtc = null
@@ -163,6 +171,38 @@ class MonitorService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        updateCpuWakeLock(prefs.getBoolean("keepCpuAwake", false))
+    }
+
+    private fun updateCpuWakeLock(enabled: Boolean) {
+        if (!enabled) {
+            try {
+                cpuWakeLock?.let { if (it.isHeld) it.release() }
+            } catch (e: Exception) {
+                Log.w("RemoteCameraService", "Could not release CPU wake lock", e)
+            } finally {
+                cpuWakeLock = null
+            }
+            return
+        }
+        if (cpuWakeLock?.isHeld == true) return
+        try {
+            val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+            cpuWakeLock = power.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "$packageName:RemoteCameraStandby"
+            ).apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (e: Exception) {
+            Log.e("RemoteCameraService", "Could not acquire CPU wake lock", e)
+            notifyState("安定待機用のCPU維持を開始できませんでした。通常待機で継続します")
+        }
+    }
+
+    private fun releaseCpuWakeLock() {
+        updateCpuWakeLock(false)
     }
 
     private fun createChannel() {
@@ -206,6 +246,7 @@ class MonitorService : Service() {
         rtc?.dispose()
         rtc = null
         prefs.edit().putBoolean("monitoringEnabled", false).apply()
+        releaseCpuWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
         stopSelf(startId)
@@ -560,6 +601,7 @@ class MonitorService : Service() {
         locationJob?.cancel()
         rtc?.dispose()
         rtc = null
+        releaseCpuWakeLock()
         prefs.edit().putBoolean("monitoringEnabled", false).apply()
         scope.cancel()
         super.onDestroy()
