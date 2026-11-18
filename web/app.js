@@ -1110,15 +1110,20 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   if (S.device) status("ペアリング済み");
   else status("未ペアリング");
 }
+let pttLatched = false;
+let pttSafetyTimer = null;
 function ptt(enabled) {
   const track = S.mic && S.mic.getAudioTracks()[0];
-  if (!track) return;
-  S.pttActive = enabled;
-  track.enabled = enabled;
-  // Half-duplex: mute the Android return audio while sending PTT audio.
-  S.remoteAudioTracks.forEach(remoteTrack => { remoteTrack.enabled = !enabled; });
-  $("ptt").classList.toggle("active", enabled);
-  $("ptt").textContent = enabled ? "送話中…" : "押している間だけ話す";
+  if (!track && enabled) return;
+  if (pttSafetyTimer) clearTimeout(pttSafetyTimer);
+  pttSafetyTimer = null;
+  S.pttActive = !!enabled;
+  if (track) track.enabled = !!enabled;
+  S.remoteAudioTracks.forEach(remoteTrack => { remoteTrack.enabled = !S.pttActive; });
+  $("ptt").classList.toggle("active", S.pttActive);
+  $("pttStatus").textContent = S.pttActive ? "送話中" : "待機中";
+  $("ptt").textContent = S.pttActive ? "送話中…" : (pttLatched ? "タップして送話開始" : "押している間だけ話す");
+  if (S.pttActive) pttSafetyTimer = setTimeout(() => { ptt(false); toast("安全のため送話を90秒で自動停止しました。"); }, 90000);
 }
 async function loadSettings() {
   if (!S.device) return;
@@ -1385,10 +1390,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("claim").addEventListener("click", claimDevice);
   $("connect").addEventListener("click", connect);
   $("disconnect").addEventListener("click", () => disconnect(true));
-  $("ptt").addEventListener("pointerdown", event => { event.preventDefault(); ptt(true); });
-  ["pointerup", "pointerleave", "pointercancel", "lostpointercapture"].forEach(name => {
-    $("ptt").addEventListener(name, () => ptt(false));
-  });
+  $("ptt").addEventListener("pointerdown", event => { event.preventDefault(); if (pttLatched) { ptt(!S.pttActive); return; } try { $("ptt").setPointerCapture(event.pointerId); } catch (_) {} ptt(true); });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach(name => $("ptt").addEventListener(name, () => { if (!pttLatched) ptt(false); }));
+  $("pttLock").addEventListener("click", () => { if (S.pttActive) ptt(false); pttLatched = !pttLatched; $("pttLock").textContent = pttLatched ? "🔒 タップ固定 ON" : "🔒 タップ固定 OFF"; $("pttHint").textContent = pttLatched ? "1回タップで送話開始、もう1回で停止。90秒で自動停止。" : "押している間だけ送話します。"; });
+  window.addEventListener("blur", () => { if (S.pttActive) ptt(false); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden && S.pttActive) ptt(false); });
   $("saveSettings").addEventListener("click", () => saveSettings().catch(error => toast(error.message)));
   $("locate").addEventListener("click", () => command("location_once").catch(error => toast(error.message)));
   $("history").addEventListener("click", () => loadHistory().catch(error => toast(error.message)));

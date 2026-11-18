@@ -17,6 +17,12 @@
 </header>
 <main class="app">
   <aside class="side">
+    <section class="pttCard">
+      <div class="sideTitle"><h3>🎙 プッシュトーク</h3><span id="pttStatus">待機中</span></div>
+      <button id="ptt" type="button" class="ptt wide" disabled>押している間だけ話す</button>
+      <button id="pttLock" type="button" class="wide" disabled>🔒 タップ固定 OFF</button>
+      <p id="pttHint" class="hint">タップ固定ONなら1回タップで送話開始、もう1回で停止。</p>
+    </section>
     <section class="deviceCard">
       <div class="sideTitle"><h3>接続端末</h3><button id="refresh" type="button" aria-label="端末一覧を更新">↻</button></div>
       <div id="devices"><p class="muted">登録済み端末はありません。</p></div>
@@ -76,12 +82,6 @@
       </div>
     </details>
 
-    <details class="settingsGroup">
-      <summary>🎤 音声操作</summary>
-      <div class="settingsBody">
-        <button id="ptt" type="button" class="ptt wide" disabled>押している間だけ話す</button>
-      </div>
-    </details>
     <a class="download" href="https://github.com/a09848281-prog/web/actions" target="_blank" rel="noopener">Android APKのビルド・ダウンロード</a>
   </aside>
   <section class="view">

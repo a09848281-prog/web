@@ -283,10 +283,12 @@ class RtcEngine(
                 PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions()
             )
             egl = EglBase.create()
+            // Ambient-first preset: capture raw microphone input without call-oriented
+            // hardware noise suppression or echo cancellation that may gate quiet sounds.
             audioDeviceModule = JavaAudioDeviceModule.builder(context.applicationContext)
-                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
-                .setUseHardwareAcousticEchoCanceler(true)
-                .setUseHardwareNoiseSuppressor(true)
+                .setAudioSource(MediaRecorder.AudioSource.MIC)
+                .setUseHardwareAcousticEchoCanceler(false)
+                .setUseHardwareNoiseSuppressor(false)
                 .createAudioDeviceModule()
             factory = PeerConnectionFactory.builder()
                 .setAudioDeviceModule(audioDeviceModule!!)
