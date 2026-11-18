@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="./app.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-<script defer src="./app.js?v=3.3.0"></script>
+<script defer src="./app.js?v=3.6.0"></script>
 </head>
 <body>
 <header class="top">
@@ -50,12 +50,27 @@
       <div><small>LIVE VIEW</small><h2 id="deviceName">Android端末をペアリングしてください</h2><p id="deviceMeta">待機中</p></div>
       <div><button id="videoTab" type="button" class="active">映像</button><button id="mapTab" type="button">地図</button></div>
     </div>
+    <div class="viewerControls">
+      <button id="fullscreen" type="button">全画面</button>
+      <button id="fitMode" type="button">全体表示</button>
+      <label class="zoomControl">表示ズーム <input id="viewerZoom" type="range" min="100" max="250" step="10" value="100"></label>
+      <output id="zoomValue">100%</output>
+      <span id="sessionDuration">接続時間 00:00:00</span>
+    </div>
+    <p id="connectionMetrics" class="metrics">通信状態：未接続</p>
     <div id="videoPane" class="videoPane">
       <video id="remoteVideo" autoplay playsinline></video>
       <div id="placeholder"><b>映像はまだありません</b><small>Androidで監視待機を開始してから接続してください。</small></div>
       <footer><span id="streamState">待機中</span><span id="iceState">ICE: --</span></footer>
     </div>
-    <div id="mapPane" class="hidden"><div id="map"></div><p id="locationInfo">位置情報はありません。</p></div>
+    <div id="mapPane" class="hidden">
+      <div class="mapTools">
+        <label class="check"><input id="mapFollow" type="checkbox" checked> 最新位置を追尾</label>
+        <button id="copyLocation" type="button">座標をコピー</button>
+      </div>
+      <div id="map"></div>
+      <p id="locationInfo">位置情報はありません。</p>
+    </div>
     <p class="footer">録画・録音機能はありません。カメラ・マイクはAndroid側で待機を開始した後、接続時に使用します。</p>
   </section>
 </main>
