@@ -210,6 +210,21 @@ class RtcEngine(
             peer = factory!!.createPeerConnection(config, observer)
                 ?: error("PeerConnectionを作成できません。")
             peers[sessionId] = peer
+
+            // The service is a single-viewer camera. Close stale sessions after
+            // registering the new peer so their CLOSED callbacks do not dispose
+            // the shared camera tracks used by the replacement session.
+            peers.entries.toList().forEach { entry ->
+                val oldSession = entry.key
+                val oldPeer = entry.value
+                if (oldSession != sessionId && peers.remove(oldSession, oldPeer)) {
+                    videoSenders.remove(oldSession)
+                    try { oldPeer.close() } catch (e: Exception) {
+                        Log.w("RemoteCameraRTC", "Could not close stale peer " + oldSession, e)
+                    }
+                }
+            }
+
             videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
             peer.addTrack(audioTrack, listOf("remote-camera"))
             peer.setRemoteDescription(object : SdpObserver {
@@ -279,31 +294,39 @@ class RtcEngine(
         currentDataMode = dataMode
         val profile = profileFor(currentQuality, currentDataMode)
         val camera = capturer
-        if (camera != null &&
+        val formatChanged = camera != null &&
             (profile.width != captureWidth || profile.height != captureHeight || profile.fps != captureFps)
-        ) {
+
+        // Never reconfigure Camera2 in the middle of a live WebRTC session.
+        // Camera format changes can pause the capture pipeline and cause a visible freeze.
+        if (formatChanged && peers.isEmpty()) {
             try {
-                camera.changeCaptureFormat(profile.width, profile.height, profile.fps)
+                camera!!.changeCaptureFormat(profile.width, profile.height, profile.fps)
                 captureWidth = profile.width
                 captureHeight = profile.height
                 captureFps = profile.fps
             } catch (e: Exception) {
-                Log.w("RemoteCameraRTC", "Could not change camera capture format", e)
-                onState("画質変更に失敗しました。端末が対応する画質を確認してください。")
+                Log.w("RemoteCameraRTC", "Could not change camera capture format while idle", e)
+                onState("画質設定は保存しました。カメラ解像度は次回接続時に適用します。")
             }
+        } else if (formatChanged && peers.isNotEmpty()) {
+            onState("画質設定を受け付けました。送信レートは即時変更し、解像度は次回接続時に適用します。")
         }
+
+        // Bitrate and maximum send frame rate are updated on the sender without
+        // stopping Camera2. Resolution changes are intentionally deferred.
         videoSenders.values.forEach { sender ->
             try {
                 val params = sender.parameters
-                params.encodings.forEach {
-                    it.maxBitrateBps = profile.bitrate
-                    it.maxFramerate = profile.fps
+                params.encodings.forEach { encoding ->
+                    encoding.maxBitrateBps = profile.bitrate
+                    encoding.maxFramerate = profile.fps
                 }
                 if (!sender.setParameters(params)) {
                     Log.w("RemoteCameraRTC", "Video sender rejected quality parameters")
                 }
             } catch (e: Exception) {
-                Log.w("RemoteCameraRTC", "Could not change video bitrate", e)
+                Log.w("RemoteCameraRTC", "Could not update video sender parameters", e)
             }
         }
     }
