@@ -555,7 +555,9 @@ function attachRemoteAudio() {
   if (!prepareAudioOutput()) {
     $("remoteVideo").muted = false;
     setReceiveVolume(S.receiveVolume, false);
-    $("audioState").textContent = "Androidマイク受信中（Safari標準音声）";
+    $("audioState").textContent = S.receiveVolume > 100
+      ? "Androidマイク受信中（この環境では受信音量100%まで）"
+      : "Androidマイク受信中（Safari標準音声）";
     return;
   }
   try {
@@ -778,7 +780,7 @@ function setReceiveVolume(value, persist = true) {
   if (S.remoteGain && S.audioContext) {
     S.remoteGain.gain.setTargetAtTime(S.receiveVolume / 100, S.audioContext.currentTime, 0.035);
   } else if ($("remoteVideo")) {
-    try { $("remoteVideo").volume = S.receiveVolume / 100; } catch (_) {}
+    try { $("remoteVideo").volume = Math.min(100, S.receiveVolume) / 100; } catch (_) {}
   }
   if (persist) {
     try { localStorage.setItem("rc_receive_volume_v1", String(S.receiveVolume)); } catch (_) {}
