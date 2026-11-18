@@ -1,5 +1,5 @@
 /**
- * Remote Camera GAS API v3.2
+ * Remote Camera GAS API v3.8
  * Account-free camera-first API.
  * Web controller access is granted only by an expiring Android pairing code.
  */
@@ -27,7 +27,7 @@ function doGet() {
 }
 
 function health_() {
-  const version = "3.3.0";
+  const version = "3.8.0";
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty("DB_SPREADSHEET_ID");
   if (!spreadsheetId) {
     return {
@@ -67,24 +67,31 @@ function health_() {
 }
 
 function doPost(e) {
+  const startedAt = Date.now();
   let req = {};
+  let params = {};
+  let result;
   try {
-    const params = e && e.parameter ? e.parameter : {};
+    params = e && e.parameter ? e.parameter : {};
     const raw = params.payload || "";
     if (!raw) throw Error("payload がありません。");
     req = JSON.parse(raw);
-    const result = dispatch_(req);
-    if (params.mode === "json") {
-      return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
-    }
-    return bridge_(req.requestId || "", result);
+    result = dispatch_(req);
+    if (!result || typeof result !== "object") result = { ok: true, value: result };
+    result.serverMs = Date.now() - startedAt;
+    result.apiVersion = "3.8.0";
   } catch (err) {
-    const result = { ok: false, error: safeError_(err) };
-    if (e && e.parameter && e.parameter.mode === "json") {
-      return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
-    }
-    return bridge_(req.requestId || "", result);
+    result = {
+      ok: false,
+      error: safeError_(err),
+      serverMs: Date.now() - startedAt,
+      apiVersion: "3.8.0"
+    };
   }
+  if (params.mode === "json") {
+    return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+  }
+  return bridge_(req.requestId || "", result);
 }
 
 /**
@@ -182,6 +189,28 @@ function rows_(name) {
   const last = sh.getLastRow();
   return last < 2 ? [] : sh.getRange(2, 1, last - 1, TABLES[name].length).getValues();
 }
+function readTail_(name, maxRows) {
+  const sh = sheet_(name);
+  const lastRow = sh.getLastRow();
+  const firstRow = Math.max(2, lastRow - Math.max(1, maxRows) + 1);
+  if (lastRow < firstRow) return { firstRow: firstRow, lastRow: lastRow, values: [] };
+  return {
+    firstRow: firstRow,
+    lastRow: lastRow,
+    values: sh.getRange(firstRow, 1, lastRow - firstRow + 1, TABLES[name].length).getValues()
+  };
+}
+
+function findRecent_(name, column, value, maxRows) {
+  const tail = readTail_(name, maxRows || 5000);
+  for (let i = tail.values.length - 1; i >= 0; i--) {
+    if (String(tail.values[i][column]) === String(value)) {
+      return { row: tail.firstRow + i, v: tail.values[i] };
+    }
+  }
+  return null;
+}
+
 function find_(name, column, value) {
   const data = rows_(name);
   for (let i = 0; i < data.length; i++) {
@@ -387,29 +416,41 @@ function devicePoll_(r) {
       latestSeq: Number(r.afterSeq || 0)
     };
   }
-  sheet_("Devices").getRange(d.row, 9).setValue(now_());
-  const commandRows = rows_("Commands");
+
+  // The lastSeen cell is useful for diagnostics, but writing it on every poll
+  // creates unnecessary Spreadsheet traffic. Update it at most once per minute.
+  const cache = CacheService.getScriptCache();
+  const seenKey = "device_seen_" + id;
+  if (!cache.get(seenKey)) {
+    sheet_("Devices").getRange(d.row, 9).setValue(now_());
+    cache.put(seenKey, "1", 60);
+  }
+
+  const commandTail = readTail_("Commands", 1000);
   const commands = [];
-  for (let i = 0; i < commandRows.length; i++) {
-    const v = commandRows[i];
+  for (let i = 0; i < commandTail.values.length; i++) {
+    const v = commandTail.values[i];
+    const rowNumber = commandTail.firstRow + i;
     if (v[1] !== id || v[7] !== "pending") continue;
     if (new Date(v[6]).getTime() < Date.now()) {
-      sheet_("Commands").getRange(i + 2, 8).setValue("expired");
+      sheet_("Commands").getRange(rowNumber, 8).setValue("expired");
       continue;
     }
     commands.push({ commandId: v[0], command: v[3], payload: JSON.parse(v[4] || "{}") });
   }
-  const after = Number(r.afterSeq || 0);
-  const allSignals = rows_("Signals");
+
+  const after = Math.max(0, Number(r.afterSeq || 0));
+  const signalTail = readTail_("Signals", 5000);
   const signals = [];
-  for (let i = 0; i < allSignals.length; i++) {
-    const v = allSignals[i];
-    const seq = Number(v[0] || i + 2);
-    if (v[2] === id && v[3] === "viewer" && v[4] === "device" &&
-        seq > after && new Date(v[9]).getTime() > Date.now()) {
+  for (let i = 0; i < signalTail.values.length; i++) {
+    const v = signalTail.values[i];
+    const seq = Number(v[0] || signalTail.firstRow + i);
+    if (seq > after && v[2] === id && v[3] === "viewer" && v[4] === "device" &&
+        new Date(v[9]).getTime() > Date.now()) {
       signals.push({ seq: seq, sessionId: v[1], kind: v[5], sdp: v[6], candidate: v[7] ? JSON.parse(v[7]) : null });
     }
   }
+
   const settingsHit = find_("Settings", 0, id);
   let settings = { quality: "720", dataMode: "standard", connectedLocationEnabled: false, idleLocationEnabled: false, connectedInterval: 30, idleInterval: 300 };
   if (settingsHit) {
@@ -419,12 +460,14 @@ function devicePoll_(r) {
     ok: true, registered: true,
     needsPairing: !d.v[10],
     pairingCodeActive: !!d.v[4] && new Date(d.v[5]).getTime() > Date.now(),
-    commands: commands, signals: signals,
-    latestSeq: signals.reduce(function(max, signal) { return Math.max(max, signal.seq); }, after),
+    commands: commands,
+    signals: signals,
+    // Signals use their physical sheet row as a monotonically increasing cursor.
+    // Moving the cursor to the current tail prevents repeated scans of other devices.
+    latestSeq: Math.max(after, signalTail.lastRow),
     settings: settings
   };
 }
-
 function sendSignal_(r) {
   const id = String(r.deviceId || "");
   const recipient = String(r.recipient || "");
@@ -462,12 +505,13 @@ function pollSignals_(r) {
   const d = authController_(r);
   const session = String(r.sessionId || "");
   const after = Math.max(0, Number(r.afterSeq || 0));
-  const data = rows_("Signals");
+  const tail = readTail_("Signals", 5000);
   const signals = [];
-  for (let i = 0; i < data.length; i++) {
-    const v = data[i];
-    const seq = Number(v[0] || i + 2);
-    if (v[1] === session && v[2] === d.deviceId && v[4] === "viewer" && seq > after && new Date(v[9]).getTime() > Date.now()) {
+  for (let i = 0; i < tail.values.length; i++) {
+    const v = tail.values[i];
+    const seq = Number(v[0] || tail.firstRow + i);
+    if (v[1] === session && v[2] === d.deviceId && v[4] === "viewer" &&
+        seq > after && new Date(v[9]).getTime() > Date.now()) {
       signals.push({ seq: seq, kind: v[5], sdp: v[6], candidate: v[7] ? JSON.parse(v[7]) : null });
     }
   }
@@ -487,7 +531,7 @@ function sendCommand_(r) {
 function ackCommand_(r) {
   const d = authDevice_(String(r.deviceId || ""), String(r.deviceSecret || ""));
   const commandId = String(r.commandId || "");
-  const found = find_("Commands", 0, commandId);
+  const found = findRecent_("Commands", 0, commandId, 5000);
   if (!found || found.v[1] !== d.deviceId || !["pending", "failed"].includes(String(found.v[7]))) {
     return { ok: true, ignored: true };
   }
@@ -544,16 +588,17 @@ function addLocation_(r) {
 function getLocations_(r) {
   const d = authController_(r);
   const limit = clamp_(r.limit, 1, 1000, 500);
-  const data = rows_("LocationHistory");
+  const tail = readTail_("LocationHistory", 5000);
   const locations = [];
-  for (let i = data.length - 1; i >= 0 && locations.length < limit; i--) {
-    const v = data[i];
+  for (let i = tail.values.length - 1; i >= 0 && locations.length < limit; i--) {
+    const v = tail.values[i];
     if (v[2] === d.deviceId) {
       locations.push({ id: v[0], lat: v[3], lng: v[4], accuracy: v[5], timestamp: iso_(v[6]), mode: v[7] });
     }
   }
   return { ok: true, locations: locations.reverse() };
 }
+
 function deleteLocations_(r) {
   const d = authController_(r);
   const sh = sheet_("LocationHistory");
