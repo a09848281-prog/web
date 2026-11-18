@@ -1,0 +1,6 @@
+{
+  "gasUrl": "https://script.google.com/macros/s/AKfycbz2B2DzvtiM9WugX_ZdKulLbbm9M5sSkoE0C3vPzqR0C7IoYm5LEritRccFwuExyX7i/exec",
+  "appVersion": "3.8.0",
+  "pollIntervalMs": 2500,
+  "requestTimeoutMs": 12000
+}
