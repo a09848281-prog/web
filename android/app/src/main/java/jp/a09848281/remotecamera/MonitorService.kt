@@ -507,7 +507,7 @@ class MonitorService : Service() {
     private suspend fun locationLoop() {
         while (scope.isActive) {
             try {
-                val connected = rtc?.hasPeers() == true
+                val connected = rtc?.hasConnectedPeer() == true
                 val enabled = if (connected) connectedLocationEnabled else idleLocationEnabled
                 val interval = (if (connected) connectedInterval else idleInterval) * 1000L
                 if (enabled && System.currentTimeMillis() - lastLocationAttempt >= interval) {
