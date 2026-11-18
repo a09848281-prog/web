@@ -2,7 +2,7 @@
 
 - Branch: `rebuild-v3.8-realtime-stability-no-firebase`
 - Build commit: `ec5e31fd251652bd64b04ff886fe8969512631cb`
-- Android application ID: `jp.a09848281.remotecamera`
+- Android application ID: `jp.a09848281.remotecamera.v38preview`
 - Version name: `3.8.0`
 - Version code: `308`
 - Workflow: [Build Android APK #116](https://github.com/a09848281-prog/web/actions/runs/44299770829)
@@ -19,6 +19,10 @@
 - GitHub Pages deployment: [run 44300276881](https://github.com/a09848281-prog/web/actions/runs/44300276881), successful
 - Main branch source/CI validation of the preview-only web assets: [run 44300276804](https://github.com/a09848281-prog/web/actions/runs/44300276804), successful
 - The production root URL https://a09848281-prog.github.io/web/ remains unchanged; only the v3.8 preview is at /web/preview/.
+
+## Installation safety
+
+The v3.8 APK uses a separate application ID (`jp.a09848281.remotecamera.v38preview`) and Android label `Remote Camera 3.8 Preview`. This allows it to be installed side-by-side with the v3.7 app because CI-generated debug APKs use different signing certificates. Do not uninstall the v3.7 app; its pairing and settings remain separate. Pair the v3.8 app with its own newly displayed 8-digit code.
 
 ## Automated verification
 
