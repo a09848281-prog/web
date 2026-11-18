@@ -1001,6 +1001,9 @@ async function connect(automatic = false) {
     $("connect").disabled = true;
     $("disconnect").disabled = false;
     $("ptt").disabled = false;
+    $("pttLock").disabled = false;
+    $("remoteMute").disabled = false;
+    $("androidSpeakerVolume").disabled = false;
     $("streamState").textContent = "Android応答待ち";
     status("接続要求中");
     pollAnswers();
@@ -1170,7 +1173,16 @@ async function disconnect(sendCommand = true, preserveMic = false) {
 }
 function ptt(enabled) {
   const track = S.mic && S.mic.getAudioTracks()[0];
-  if (!track) return;
+  if (!track) {
+    if (S.pttSafetyTimer) clearTimeout(S.pttSafetyTimer);
+    S.pttSafetyTimer = null;
+    S.pttActive = false;
+    if ($("ptt")) {
+      $("ptt").classList.remove("active");
+      $("ptt").textContent = "🎙 押している間だけ話す";
+    }
+    return;
+  }
   if (S.pttSafetyTimer) clearTimeout(S.pttSafetyTimer);
   S.pttSafetyTimer = null;
   S.pttActive = enabled;
