@@ -528,6 +528,7 @@ function stopVideoWatchdog() {
 }
 
 function startVideoWatchdog(pc) {
+  if (S.pc === pc && S.videoWatchdogTimer) return;
   stopVideoWatchdog();
   $("videoState").textContent = "映像の初回フレーム待ち";
   S.hasReceivedVideoFrame = false;
@@ -876,6 +877,7 @@ async function saveSettings() {
     settings
   });
   await sendControlCommand("quality", { quality: settings.quality, dataMode: settings.dataMode });
+  await sendControlCommand("location_settings", settings);
   toast("設定を保存しました。");
 }
 async function sendControlCommand(name, payload = {}) {
