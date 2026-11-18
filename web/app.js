@@ -39,6 +39,15 @@ const S = {
   remoteAudioSource: null,
   remoteVideoStream: null,
   receiveVolume: 70,
+  captureRatio: "16:9",
+  fpsLimit: 24,
+  appliedAdaptiveMode: "standard",
+  adaptiveLastChangeAt: 0,
+  adaptiveStableSince: 0,
+  flashlightOn: false,
+  wakeLock: null,
+  keepAwakeWanted: false,
+  androidStatusTimer: null,
   settingsSaveChain: Promise.resolve(),
   controlChannel: null,
   lastGasServerMs: null,
@@ -216,6 +225,9 @@ function setControlsEnabled(enabled) {
   $("disconnect").disabled = !S.pc;
   $("camera").disabled = !enabled || !S.pc;
   $("ptt").disabled = !S.pc;
+  $("snapshot").disabled = !S.pc;
+  $("refreshStatus").disabled = !S.pc;
+  if (!S.pc) updateFlashlightButton(false, false);
 }
 function selectDevice(device) {
   if (S.pc && S.device && S.device.deviceId !== device.deviceId) {
@@ -392,6 +404,7 @@ async function collectConnectionStats(pc) {
     const loss = receivedDelta + lostDelta > 0 ? lostDelta / (receivedDelta + lostDelta) * 100 : 0;
     const grade = loss > 8 || (rttMs !== null && rttMs > 500) || fps < 8
       ? "不安定" : loss > 3 || (rttMs !== null && rttMs > 280) || fps < 17 ? "注意" : "良好";
+    updateAdaptiveQuality(loss, fps, rttMs);
     $("connectionMetrics").textContent =
       "通信 " + grade + "　受信 " + bitrate.toFixed(0) + " kbps　" +
       "映像 " + fps.toFixed(0) + " fps　" +
@@ -442,17 +455,48 @@ async function toggleFullscreen() {
   const pane = $("videoPane");
   const video = $("remoteVideo");
   try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
+    const isFullscreen = document.fullscreenElement ||
+      document.webkitFullscreenElement || video.webkitDisplayingFullscreen;
+    if (isFullscreen) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      else if (video.webkitExitFullscreen) video.webkitExitFullscreen();
+      window.setTimeout(restoreRemotePlayback, 350);
     } else if (pane.requestFullscreen) {
       await pane.requestFullscreen();
+    } else if (pane.webkitRequestFullscreen) {
+      pane.webkitRequestFullscreen();
     } else if (video.webkitEnterFullscreen) {
+      // iOS native video fullscreen is a last-resort path. Keep the same stream
+      // attached and explicitly resume it when webkitendfullscreen fires.
       video.webkitEnterFullscreen();
     } else {
       toast("このブラウザーは全画面表示に対応していません。");
     }
   } catch (error) {
     toast("全画面表示に失敗しました: " + error.message);
+  }
+}
+
+function restoreRemotePlayback() {
+  const video = $("remoteVideo");
+  if (!S.pc || !S.remoteVideoStream || S.pc.connectionState === "closed") return;
+  try {
+    if (video.srcObject !== S.remoteVideoStream) video.srcObject = S.remoteVideoStream;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    if (S.audioContext && S.audioContext.state === "suspended") {
+      S.audioContext.resume().catch(error => console.debug("AudioContext resume failed", error));
+    }
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {
+        $("videoState").textContent = "映像は接続中です。画面をタップして再生してください。";
+      });
+    }
+  } catch (error) {
+    console.debug("Remote video resume failed", error);
   }
 }
 
@@ -495,24 +539,195 @@ function prepareAudioOutput() {
 }
 
 function attachRemoteAudio() {
-  if (!S.remoteAudioTracks.length) return;
+  const liveTracks = S.remoteAudioTracks.filter(track => track.readyState === "live");
+  if (!liveTracks.length) {
+    $("audioState").textContent = "Androidマイク待機中";
+    return;
+  }
   if (!prepareAudioOutput()) {
     $("remoteVideo").muted = false;
     setReceiveVolume(S.receiveVolume, false);
+    $("audioState").textContent = "Androidマイク受信中（Safari標準音声）";
     return;
   }
   try {
     if (S.remoteAudioSource) S.remoteAudioSource.disconnect();
-    const liveTracks = S.remoteAudioTracks.filter(track => track.readyState === "live");
-    if (!liveTracks.length) return;
     const audioStream = new MediaStream(liveTracks);
     S.remoteAudioSource = S.audioContext.createMediaStreamSource(audioStream);
     S.remoteAudioSource.connect(S.remoteGain);
     $("remoteVideo").muted = true;
+    $("audioState").textContent = "Androidマイク受信中";
+    if (S.audioContext.state === "suspended") {
+      S.audioContext.resume().catch(error => console.debug("Android audio resume failed", error));
+    }
   } catch (error) {
     console.warn("Remote audio routing failed; falling back to media element", error);
     $("remoteVideo").muted = false;
+    $("audioState").textContent = "Androidマイク受信中（標準音声へ切替）";
   }
+}
+
+function handleControlMessage(raw) {
+  let data;
+  try { data = typeof raw === "string" ? JSON.parse(raw) : raw; }
+  catch (error) { console.debug("Invalid control-channel response", error); return; }
+  if (!data || typeof data !== "object") return;
+  if (data.type === "device_status") {
+    const battery = Number(data.batteryPercent);
+    const batteryText = Number.isFinite(battery) && battery >= 0 ? battery + "%" : "取得不可";
+    const temperature = Number(data.batteryTempC);
+    const tempText = Number.isFinite(temperature) ? " / " + temperature.toFixed(1) + "℃" : "";
+    $("androidStatus").textContent =
+      "Android電池 " + batteryText + (data.charging ? "・充電中" : "") + tempText +
+      " / " + (data.cameraFacing === "front" ? "前面カメラ" : "背面カメラ") +
+      " / ライト " + (data.flashlightOn ? "ON" : "OFF");
+    S.flashlightOn = !!data.flashlightOn;
+    updateFlashlightButton(!!data.flashlightAvailable, S.flashlightOn);
+    return;
+  }
+  if (data.type === "command_result") {
+    if (data.name === "flashlight") {
+      if (data.success) {
+        S.flashlightOn = !!(data.payload && data.payload.enabled);
+        toast(S.flashlightOn ? "AndroidライトをONにしました。" : "AndroidライトをOFFにしました。");
+        requestDeviceStatus().catch(() => {});
+      } else {
+        toast("ライトを切り替えできませんでした。背面カメラとライト対応を確認してください。");
+      }
+    }
+  }
+}
+
+function updateFlashlightButton(available, enabled) {
+  const button = $("flashlight");
+  button.disabled = !S.pc || !available;
+  button.classList.toggle("active", enabled);
+  button.textContent = enabled ? "🔦 ライト ON" : "🔦 ライト OFF";
+  button.title = available ? "Android背面カメラのライトを切り替えます" : "この端末ではライトを利用できません";
+}
+
+async function requestDeviceStatus() {
+  if (!S.controlChannel || S.controlChannel.readyState !== "open") {
+    throw new Error("端末情報の取得にはWebRTC接続が必要です。");
+  }
+  S.controlChannel.send(JSON.stringify({
+    type: "command", name: "get_device_status", payload: {}, requestId: rid(), sentAt: Date.now()
+  }));
+}
+
+async function takeSnapshot() {
+  const video = $("remoteVideo");
+  if (!S.pc || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+    return toast("保存できる映像がまだありません。");
+  }
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("画像処理を開始できません。");
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("画像データを作成できませんでした。");
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "remote-camera-" + new Date().toISOString().replace(/[:.]/g, "-") + ".png";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    toast("静止画をPNGで保存しました。");
+  } catch (error) {
+    toast("静止画を保存できません：" + error.message);
+  }
+}
+
+async function toggleFlashlight() {
+  if (!S.pc) return toast("先にAndroidへ接続してください。");
+  const next = !S.flashlightOn;
+  try {
+    const result = await sendControlCommand("flashlight", { enabled: next });
+    if (result.delivered === "webrtc") {
+      toast("Androidライトの切替要求を送信しました。");
+    } else {
+      S.flashlightOn = next;
+      updateFlashlightButton(true, next);
+      toast("ライト切替要求をGAS経由で送信しました。");
+      setTimeout(() => requestDeviceStatus().catch(() => {}), 1800);
+    }
+  } catch (error) {
+    toast("ライト操作に失敗しました：" + error.message);
+  }
+}
+
+async function enableScreenWakeLock() {
+  if (!navigator.wakeLock || typeof navigator.wakeLock.request !== "function") {
+    toast("このブラウザーは画面スリープ防止に対応していません。");
+    return false;
+  }
+  try {
+    S.wakeLock = await navigator.wakeLock.request("screen");
+    S.wakeLock.addEventListener("release", () => {
+      S.wakeLock = null;
+      $("keepAwake").classList.remove("active");
+      $("keepAwake").textContent = "画面スリープ防止 OFF";
+    });
+    $("keepAwake").classList.add("active");
+    $("keepAwake").textContent = "画面スリープ防止 ON";
+    return true;
+  } catch (error) {
+    S.wakeLock = null;
+    toast("画面スリープ防止を開始できません：" + error.message);
+    return false;
+  }
+}
+
+async function toggleScreenWakeLock() {
+  S.keepAwakeWanted = !S.keepAwakeWanted;
+  if (!S.keepAwakeWanted) {
+    if (S.wakeLock) {
+      try { await S.wakeLock.release(); } catch (_) {}
+      S.wakeLock = null;
+    }
+    $("keepAwake").classList.remove("active");
+    $("keepAwake").textContent = "画面スリープ防止 OFF";
+    return;
+  }
+  const ok = await enableScreenWakeLock();
+  if (!ok) S.keepAwakeWanted = false;
+}
+
+function updateAdaptiveQuality(loss, fps, rttMs) {
+  if (!S.pc || $("dataMode").value !== "auto") return;
+  const modes = ["ultra", "save", "standard", "high"];
+  const currentIndex = Math.max(0, modes.indexOf(S.appliedAdaptiveMode));
+  const now = Date.now();
+  let nextIndex = currentIndex;
+  const severe = loss > 8 || fps < 9 || (rttMs !== null && rttMs > 500);
+  const warning = loss > 4 || fps < 15 || (rttMs !== null && rttMs > 320);
+  if (severe) {
+    nextIndex = Math.max(0, currentIndex - 1);
+    S.adaptiveStableSince = 0;
+  } else if (warning) {
+    nextIndex = Math.max(0, currentIndex - 1);
+    S.adaptiveStableSince = 0;
+  } else {
+    if (!S.adaptiveStableSince) S.adaptiveStableSince = now;
+    if (now - S.adaptiveStableSince > 35000) nextIndex = Math.min(modes.length - 1, currentIndex + 1);
+  }
+  if (nextIndex === currentIndex || now - S.adaptiveLastChangeAt < 12000) return;
+  if (!S.controlChannel || S.controlChannel.readyState !== "open") return;
+  S.appliedAdaptiveMode = modes[nextIndex];
+  S.adaptiveLastChangeAt = now;
+  sendControlCommand("quality", {
+    quality: $("quality").value,
+    dataMode: S.appliedAdaptiveMode,
+    captureRatio: $("captureRatio").value,
+    fpsLimit: Number($("fpsLimit").value)
+  }).then(() => {
+    $("connectionMetrics").textContent += " / 自動画質：" + S.appliedAdaptiveMode;
+  }).catch(error => console.debug("Adaptive quality command failed", error));
 }
 
 function setReceiveVolume(value, persist = true) {
@@ -644,9 +859,25 @@ async function connect(automatic = false) {
     S.controlChannel = controlChannel;
     controlChannel.onopen = () => {
       $("streamState").textContent = "操作用データチャネル接続済み";
+      S.appliedAdaptiveMode = $("dataMode").value === "auto" ? "standard" : $("dataMode").value;
+      sendControlCommand("quality", {
+        quality: $("quality").value,
+        dataMode: $("dataMode").value === "auto" ? "standard" : $("dataMode").value,
+        captureRatio: $("captureRatio").value,
+        fpsLimit: Number($("fpsLimit").value)
+      }).catch(error => console.debug("Initial capture profile send failed", error));
+      $("refreshStatus").disabled = false;
+      requestDeviceStatus().catch(error => console.debug("Android status request failed", error));
+      if (S.androidStatusTimer) clearInterval(S.androidStatusTimer);
+      S.androidStatusTimer = setInterval(() => {
+        requestDeviceStatus().catch(error => console.debug("Periodic status request failed", error));
+      }, 60000);
     };
+    controlChannel.onmessage = event => handleControlMessage(event.data);
     controlChannel.onclose = () => {
       if (S.controlChannel === controlChannel) S.controlChannel = null;
+      if (S.androidStatusTimer) clearInterval(S.androidStatusTimer);
+      S.androidStatusTimer = null;
     };
     pc.addTransceiver("video", { direction: "recvonly" });
     pc.addTrack(localAudioTrack, stream);
@@ -663,11 +894,18 @@ async function connect(automatic = false) {
           scheduleReconnect(pc, true, 1200);
         };
         $("placeholder").classList.add("hidden");
+        $("snapshot").disabled = false;
         startVideoWatchdog(pc);
-        $("remoteVideo").play().catch(() => toast("映像を再生するには画面をタップしてください。"));
+        restoreRemotePlayback();
       } else if (track.kind === "audio") {
         if (!S.remoteAudioTracks.some(existing => existing.id === track.id)) {
           track.enabled = !S.pttActive;
+          track.onmute = () => { $("audioState").textContent = "Androidマイク一時停止"; };
+          track.onunmute = () => {
+            $("audioState").textContent = "Androidマイク受信中";
+            attachRemoteAudio();
+          };
+          track.onended = () => { $("audioState").textContent = "Androidマイク切断"; };
           S.remoteAudioTracks.push(track);
         }
         attachRemoteAudio();
@@ -827,6 +1065,19 @@ async function disconnect(sendCommand = true, preserveMic = false) {
     try { S.remoteAudioSource.disconnect(); } catch (_) {}
     S.remoteAudioSource = null;
   }
+  if (S.androidStatusTimer) clearInterval(S.androidStatusTimer);
+  S.androidStatusTimer = null;
+  if (S.wakeLock) {
+    try { await S.wakeLock.release(); } catch (_) {}
+    S.wakeLock = null;
+  }
+  S.keepAwakeWanted = false;
+  $("keepAwake").classList.remove("active");
+  $("keepAwake").textContent = "画面スリープ防止 OFF";
+  S.flashlightOn = false;
+  updateFlashlightButton(false, false);
+  $("androidStatus").textContent = "Android情報：未取得";
+  $("audioState").textContent = "Androidマイク待機中";
   S.remoteAudioTracks = [];
   S.remoteVideoStream = null;
   if (S.mic) {
@@ -841,6 +1092,8 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   S.remoteAudioTracks = [];
   $("remoteVideo").srcObject = null;
   $("remoteVideo").muted = true;
+  $("snapshot").disabled = true;
+  $("refreshStatus").disabled = true;
   $("videoState").textContent = "映像待機中";
   $("placeholder").classList.remove("hidden");
   $("connect").disabled = !S.device;
@@ -876,6 +1129,10 @@ async function loadSettings() {
   const settings = result.settings || {};
   $("quality").value = settings.quality || "720";
   $("dataMode").value = settings.dataMode || "standard";
+  $("captureRatio").value = settings.captureRatio || "16:9";
+  $("fpsLimit").value = String(settings.fpsLimit || 24);
+  S.captureRatio = $("captureRatio").value;
+  S.fpsLimit = Number($("fpsLimit").value);
   $("connectedLoc").checked = !!settings.connectedLocationEnabled;
   $("idleLoc").checked = !!settings.idleLocationEnabled;
   $("connectedInterval").value = String(settings.connectedInterval || 30);
@@ -883,9 +1140,13 @@ async function loadSettings() {
 }
 async function saveSettings() {
   if (!S.device) return toast("Android端末をペアリングしてください。");
+  S.captureRatio = $("captureRatio").value;
+  S.fpsLimit = Number($("fpsLimit").value);
   const settings = {
     quality: $("quality").value,
     dataMode: $("dataMode").value,
+    captureRatio: S.captureRatio,
+    fpsLimit: S.fpsLimit,
     connectedLocationEnabled: $("connectedLoc").checked,
     idleLocationEnabled: $("idleLoc").checked,
     connectedInterval: Number($("connectedInterval").value),
@@ -897,7 +1158,9 @@ async function saveSettings() {
   if (direct) {
     await sendControlCommand("quality", {
       quality: settings.quality,
-      dataMode: settings.dataMode
+      dataMode: settings.dataMode === "auto" ? "standard" : settings.dataMode,
+      captureRatio: settings.captureRatio,
+      fpsLimit: settings.fpsLimit
     });
     await sendControlCommand("location_settings", settings);
     toast("Androidに設定を反映しました。GASへ保存中…");
@@ -923,20 +1186,24 @@ async function saveSettings() {
   await S.settingsSaveChain;
   await sendControlCommand("quality", {
     quality: settings.quality,
-    dataMode: settings.dataMode
+    dataMode: settings.dataMode === "auto" ? "standard" : settings.dataMode,
+    captureRatio: settings.captureRatio,
+    fpsLimit: settings.fpsLimit
   });
   await sendControlCommand("location_settings", settings);
   toast("設定を保存しました。");
 }
 async function sendControlCommand(name, payload = {}) {
   if (S.controlChannel && S.controlChannel.readyState === "open") {
+    const requestId = rid();
     S.controlChannel.send(JSON.stringify({
       type: "command",
       name,
       payload,
+      requestId,
       sentAt: Date.now()
     }));
-    return { delivered: "webrtc" };
+    return { delivered: "webrtc", requestId };
   }
   if (!S.device) throw Error("Android端末をペアリングしてください。");
   return api("send_command", {
@@ -1094,11 +1361,21 @@ document.addEventListener("visibilitychange", () => {
   if (S.audioContext && S.audioContext.state === "suspended") {
     S.audioContext.resume().catch(error => console.debug("AudioContext resume failed", error));
   }
+  if (S.keepAwakeWanted && !S.wakeLock) enableScreenWakeLock().catch(() => {});
+  window.setTimeout(restoreRemotePlayback, 180);
   if (!S.pc) return;
   const state = S.pc.connectionState;
   if (["disconnected", "failed", "closed"].includes(state)) {
     scheduleReconnect(S.pc);
   }
+});
+
+document.addEventListener("fullscreenchange", () => window.setTimeout(restoreRemotePlayback, 180));
+document.addEventListener("webkitfullscreenchange", () => window.setTimeout(restoreRemotePlayback, 180));
+$("remoteVideo").addEventListener("webkitendfullscreen", () => window.setTimeout(restoreRemotePlayback, 350));
+window.addEventListener("pageshow", () => window.setTimeout(restoreRemotePlayback, 180));
+window.addEventListener("resize", () => {
+  if (S.pc && S.remoteVideoStream) window.setTimeout(restoreRemotePlayback, 150);
 });
 document.addEventListener("DOMContentLoaded", async () => {
   $("refresh").addEventListener("click", refreshDeviceList);
@@ -1119,6 +1396,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("videoTab").addEventListener("click", showVideo);
   $("mapTab").addEventListener("click", showMap);
   $("fullscreen").addEventListener("click", toggleFullscreen);
+  $("snapshot").addEventListener("click", takeSnapshot);
+  $("flashlight").addEventListener("click", toggleFlashlight);
+  $("keepAwake").addEventListener("click", toggleScreenWakeLock);
+  $("refreshStatus").addEventListener("click", () => requestDeviceStatus()
+    .then(() => toast("Android端末情報を更新しています…"))
+    .catch(error => toast(error.message)));
   $("viewerZoom").addEventListener("input", event => {
     S.zoom = Math.max(1, Math.min(2.5, Number(event.target.value) / 100));
     updateViewerTransform();
@@ -1143,7 +1426,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     command("camera", { facing: event.target.value }).catch(error => toast(error.message));
   });
   $("quality").addEventListener("change", () => saveSettings().catch(error => toast(error.message)));
-  $("dataMode").addEventListener("change", () => saveSettings().catch(error => toast(error.message)));
+  $("dataMode").addEventListener("change", () => {
+    S.adaptiveStableSince = 0;
+    S.appliedAdaptiveMode = $("dataMode").value === "auto" ? "standard" : $("dataMode").value;
+    saveSettings().catch(error => toast(error.message));
+  });
+  $("captureRatio").addEventListener("change", () => saveSettings().catch(error => toast(error.message)));
+  $("fpsLimit").addEventListener("change", () => saveSettings().catch(error => toast(error.message)));
+  $("refreshStatus").disabled = true;
   updateViewerTransform();
   try {
     await loadConfig();

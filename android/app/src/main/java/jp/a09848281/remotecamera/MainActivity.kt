@@ -29,11 +29,18 @@ class MainActivity : Activity() {
     private lateinit var refreshCodeButton: Button
     private lateinit var stopButton: Button
     private lateinit var waitModeSpinner: Spinner
+    private lateinit var localDataModeSpinner: Spinner
     private lateinit var remoteCaptureSwitch: Switch
     private lateinit var keepAwakeSwitch: Switch
     private var selectedWaitMode = "standard"
     private val waitModeKeys = listOf("eco", "standard", "fast")
     private val waitModeLabels = listOf("省電力：30秒ごとに確認", "標準：6秒ごとに確認", "応答優先：2秒ごとに確認")
+    private val localDataModeKeys = listOf("web", "ultra", "save", "standard", "high")
+    private val localDataModeLabels = listOf(
+        "Web側の設定に従う", "超節約：映像を小さく・低通信量",
+        "節約：通信量を抑える", "標準：画質と通信量のバランス", "高画質：通信量多め"
+    )
+    private var selectedLocalDataMode = "web"
     private var gasUrl = ""
     private val prefs by lazy { getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE) }
 
@@ -100,6 +107,29 @@ class MainActivity : Activity() {
             }
         }
 
+        selectedLocalDataMode = prefs.getString("localDataMode", "web") ?: "web"
+        if (selectedLocalDataMode !in localDataModeKeys) selectedLocalDataMode = "web"
+
+        localDataModeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                localDataModeLabels
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(localDataModeKeys.indexOf(selectedLocalDataMode).coerceAtLeast(0))
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                    val mode = localDataModeKeys.getOrElse(position) { "web" }
+                    if (mode != selectedLocalDataMode) {
+                        selectedLocalDataMode = mode
+                        prefs.edit().putString("localDataMode", mode).apply()
+                        applyLocalSettingsToService()
+                    }
+                }
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
+        }
+
         waitModeSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@MainActivity,
@@ -137,11 +167,18 @@ class MainActivity : Activity() {
             setPadding(0, 10, 0, 4)
         })
         root.addView(waitModeSpinner, LinearLayout.LayoutParams(-1, -2))
+        root.addView(TextView(this).apply {
+            text = "バックグラウンド待機・配信の通信量モード"
+            textSize = 14f
+            setTextColor(0xFF586980.toInt())
+            setPadding(0, 12, 0, 4)
+        })
+        root.addView(localDataModeSpinner, LinearLayout.LayoutParams(-1, -2))
         root.addView(refreshCodeButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(startButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(stopButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(TextView(this).apply {
-            text = "アプリ画面で監視待機を開始すると、常時通知を表示してWebからの接続要求を待ち受けます。待機中は撮影・録音しません。カメラ・マイクの権限は必須、位置情報は任意です。位置情報を使う場合は正確な位置情報を許可してください。Webからの起動を許可した場合、開始済みの待機サービスが動作している間は画面ロック後も接続を試みます。撮影・録音中はAndroidのプライバシー表示と通知に状態が出ます。強制停止・端末再起動・権限取消・省電力制御後の動作は保証されません。"
+            text = "この設定画面を開いても、Foreground Serviceの待機・WebRTC接続は停止しません。アプリ画面で監視待機を開始すると、常時通知を表示してWebからの接続要求を待ち受けます。待機中は撮影・録音しません。カメラ・マイクの権限は必須、位置情報は任意です。位置情報を使う場合は正確な位置情報を許可してください。Webからの起動を許可した場合、開始済みの待機サービスが動作している間は画面ロック後も接続を試みます。撮影・録音中はAndroidのプライバシー表示と通知に状態が出ます。強制停止・端末再起動・権限取消・省電力制御後の動作は保証されません。"
             textSize = 13f
             setTextColor(0xFF66758B.toInt())
             setPadding(0, 22, 0, 0)
@@ -164,7 +201,10 @@ class MainActivity : Activity() {
                 if (gasUrl.isBlank() || gasUrl.contains("PASTE_YOUR_DEPLOYMENT_ID")) {
                     status.text = "GitHubの web/config.json にGAS URLを設定してください。"
                 } else {
-                    status.text = "設定を取得しました。必要な権限を許可して待機を開始できます。"
+                    status.text = if (prefs.getBoolean("monitoringEnabled", false))
+                "バックグラウンド待機サービスは動作中です。画面を開いても接続を停止しません。"
+            else
+                "設定を取得しました。必要な権限を許可して待機を開始できます。"
                     refreshMonitoringButtons()
                     refreshCodeButton.isEnabled = true
                     showSavedCode()
@@ -226,6 +266,7 @@ class MainActivity : Activity() {
         val intent = Intent(this, MonitorService::class.java).apply {
             action = MonitorService.ACTION_START
             putExtra(MonitorService.EXTRA_GAS_URL, gasUrl)
+            putExtra(MonitorService.EXTRA_LOCAL_DATA_MODE, selectedLocalDataMode)
         }
         try {
             ContextCompat.startForegroundService(this, intent)
@@ -252,6 +293,7 @@ class MainActivity : Activity() {
             putExtra(MonitorService.EXTRA_WAIT_MODE, selectedWaitMode)
             putExtra(MonitorService.EXTRA_REMOTE_CAPTURE_ENABLED, remoteCaptureSwitch.isChecked)
             putExtra(MonitorService.EXTRA_KEEP_CPU_AWAKE, keepAwakeSwitch.isChecked)
+            putExtra(MonitorService.EXTRA_LOCAL_DATA_MODE, selectedLocalDataMode)
         }
         try {
             startService(intent)

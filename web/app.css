@@ -64,3 +64,16 @@
 .pairQuick{background:#edf3fd;color:#2456a3;border:1px solid #cadbf4;padding:7px 10px;min-height:34px;font-size:12px}
 @media(max-width:900px){.pairQuick{flex:1}}
 @media(max-width:560px){.pairQuick{width:100%;min-height:40px}}
+
+/* v3.9 camera controls, status and fullscreen-resume safeguards */
+#videoPane:fullscreen,#videoPane:-webkit-full-screen{width:100vw;height:100dvh;max-height:100dvh;border-radius:0;margin:0}
+#videoPane:fullscreen video,#videoPane:-webkit-full-screen video{width:100%;height:100%;max-height:100dvh;object-fit:contain}
+.videoPane video{object-position:center center}
+.deviceStatus{font-size:11px;color:#52647b;white-space:normal}
+#androidStatus{flex:1 1 100%}
+#flashlight{background:#fff4cf;color:#7d5700}
+#flashlight.active{background:#f5c94c;color:#3b2b00}
+#keepAwake.active{background:#dff4e9;color:#14633f}
+#snapshot:disabled{opacity:.45}
+.videoPane footer{gap:12px;flex-wrap:wrap}
+@media(max-width:650px){.deviceStatus{flex:1 1 100%}.videoPane footer{justify-content:flex-start}}

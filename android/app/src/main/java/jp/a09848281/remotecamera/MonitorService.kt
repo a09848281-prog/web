@@ -40,6 +40,7 @@ class MonitorService : Service() {
         const val EXTRA_WAIT_MODE = "wait_mode"
         const val EXTRA_REMOTE_CAPTURE_ENABLED = "remote_capture_enabled"
         const val EXTRA_KEEP_CPU_AWAKE = "keep_cpu_awake"
+        const val EXTRA_LOCAL_DATA_MODE = "local_data_mode"
         const val EXTRA_CODE = "registration_code"
         const val EXTRA_DEVICE_ID = "device_id"
         private const val CHANNEL = "remote_camera_monitor"
@@ -60,6 +61,9 @@ class MonitorService : Service() {
     private var idleInterval = 300L
     private var currentQuality = "720"
     private var currentDataMode = "standard"
+    private var currentCaptureRatio = "16:9"
+    private var currentFpsLimit = 24
+    private var localDataMode = "web"
     private var lastLocationAttempt = 0L
     private var lastCodeRefresh = 0L
     private val apiReady = CompletableDeferred<Unit>()
@@ -85,6 +89,7 @@ class MonitorService : Service() {
                 stopSelf(startId)
                 return START_NOT_STICKY
             }
+            localDataMode = prefs.getString("localDataMode", "web") ?: "web"
             return try {
                 startMonitoringForeground()
                 if (pollJob?.isActive != true) pollJob = scope.launch { pollLoop() }
@@ -112,11 +117,18 @@ class MonitorService : Service() {
             val keepAwake = startIntent.getBooleanExtra(
                 EXTRA_KEEP_CPU_AWAKE, prefs.getBoolean("keepCpuAwake", false)
             )
+            localDataMode = startIntent.getStringExtra(EXTRA_LOCAL_DATA_MODE)
+                ?: prefs.getString("localDataMode", "web") ?: "web"
+            if (localDataMode !in listOf("web", "ultra", "save", "standard", "high")) localDataMode = "web"
+            if (localDataMode != "web") currentDataMode = localDataMode
             prefs.edit()
                 .putString("waitMode", if (mode in listOf("eco", "standard", "fast")) mode else "standard")
                 .putBoolean("remoteCaptureEnabled", remoteEnabled)
                 .putBoolean("keepCpuAwake", keepAwake)
+                .putString("localDataMode", localDataMode)
+                .putString("currentDataMode", currentDataMode)
                 .apply()
+            rtc?.setVideoProfile(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)
             updateCpuWakeLock(keepAwake)
             if (!remoteEnabled) {
                 rtc?.dispose()
@@ -138,7 +150,10 @@ class MonitorService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        prefs.edit().putString("gasUrl", gasUrl).apply()
+        localDataMode = startIntent.getStringExtra(EXTRA_LOCAL_DATA_MODE)
+            ?: prefs.getString("localDataMode", "web") ?: "web"
+        if (localDataMode !in listOf("web", "ultra", "save", "standard", "high")) localDataMode = "web"
+        prefs.edit().putString("gasUrl", gasUrl).putString("localDataMode", localDataMode).apply()
         startMonitoringForeground()
 
         if (pollJob?.isActive != true) pollJob = scope.launch { pollLoop() }
@@ -333,13 +348,23 @@ class MonitorService : Service() {
                                             rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState) { message ->
                                                 val name = message.optString("name")
                                                 val payload = message.optJSONObject("payload") ?: JSONObject()
+                                                val requestId = message.optString("requestId")
                                                 val command = JSONObject().put("command", name).put("payload", payload)
-                                                scope.launch { processCommand(command) }
+                                                scope.launch {
+                                                    val success = processCommand(command)
+                                                    rtc?.sendControlMessage(JSONObject()
+                                                        .put("type", "command_result")
+                                                        .put("requestId", requestId)
+                                                        .put("name", name)
+                                                        .put("success", success)
+                                                        .put("payload", payload))
+                                                }
                                             }
                                         }
                                         // Apply the selected profile before creating Camera2 and the first peer.
                                         // The sender bitrate/FPS are applied inside handleOffer after tracks are added.
-                                        rtc?.setQuality(currentQuality, currentDataMode)
+                                        currentDataMode = if (localDataMode == "web") currentDataMode else localDataMode
+                                        rtc?.setVideoProfile(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)
                                         rtc?.handleOffer(session, signal.optString("sdp"))
                                         notifyState("Web接続中：カメラ・マイクを使用しています")
                                     } catch (e: Exception) {
@@ -396,7 +421,7 @@ class MonitorService : Service() {
         var secret = prefs.getString("deviceSecret", "") ?: ""
         if (id.isBlank() || secret.isBlank()) {
             id = UUID.randomUUID().toString()
-            val response = api!!.call("device_begin", JSONObject().put("deviceId", id).put("deviceName", (Build.MODEL ?: "Android") + " (v3.8 Preview)"))
+            val response = api!!.call("device_begin", JSONObject().put("deviceId", id).put("deviceName", (Build.MODEL ?: "Android") + " (v3.9 Preview)"))
             secret = response.getString("deviceSecret")
             prefs.edit().putString("deviceId", id).putString("deviceSecret", secret)
                 .putBoolean("serverPaired", false).putInt("afterSeq", 0).apply()
@@ -440,13 +465,24 @@ class MonitorService : Service() {
         currentQuality = settings.optString(
             "quality", prefs.getString("currentQuality", "720") ?: "720"
         )
-        currentDataMode = settings.optString(
+        val webDataMode = settings.optString(
             "dataMode", prefs.getString("currentDataMode", "standard") ?: "standard"
         )
-        rtc?.setQuality(currentQuality, currentDataMode)
+        currentDataMode = if (localDataMode == "web") webDataMode else localDataMode
+        currentCaptureRatio = settings.optString(
+            "captureRatio", prefs.getString("currentCaptureRatio", "16:9") ?: "16:9"
+        ).takeIf { it in listOf("16:9", "4:3", "1:1", "9:16") } ?: "16:9"
+        currentFpsLimit = settings.optInt("fpsLimit", prefs.getInt("currentFpsLimit", 24)).coerceIn(15, 30)
+        prefs.edit()
+            .putString("currentQuality", currentQuality)
+            .putString("currentDataMode", currentDataMode)
+            .putString("currentCaptureRatio", currentCaptureRatio)
+            .putInt("currentFpsLimit", currentFpsLimit)
+            .apply()
+        rtc?.setVideoProfile(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)
     }
 
-    private suspend fun processCommand(command: JSONObject) {
+    private suspend fun processCommand(command: JSONObject): Boolean {
         val name = command.optString("command")
         val commandId = command.optString("commandId")
         val payload = command.optJSONObject("payload") ?: JSONObject()
@@ -473,13 +509,22 @@ class MonitorService : Service() {
                 }
                 "quality", "data_mode" -> {
                     currentQuality = payload.optString("quality", currentQuality)
-                    currentDataMode = payload.optString("dataMode", currentDataMode)
-                    // Keep the selected profile across Android activity/service recreation.
+                    val requestedDataMode = payload.optString("dataMode", currentDataMode)
+                    currentDataMode = if (localDataMode == "web") requestedDataMode else localDataMode
+                    currentCaptureRatio = payload.optString("captureRatio", currentCaptureRatio)
+                        .takeIf { it in listOf("16:9", "4:3", "1:1", "9:16") } ?: currentCaptureRatio
+                    currentFpsLimit = payload.optInt("fpsLimit", currentFpsLimit).coerceIn(15, 30)
                     prefs.edit()
                         .putString("currentQuality", currentQuality)
                         .putString("currentDataMode", currentDataMode)
+                        .putString("currentCaptureRatio", currentCaptureRatio)
+                        .putInt("currentFpsLimit", currentFpsLimit)
                         .apply()
-                    rtc?.setQuality(currentQuality, currentDataMode)
+                    rtc?.setVideoProfile(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)
+                }
+                "flashlight" -> {
+                    val engine = rtc ?: error("カメラ接続中ではありません。")
+                    engine.setFlashlight(payload.optBoolean("enabled", false))
                 }
                 "disconnect" -> {
                     rtc?.dispose()
@@ -502,6 +547,7 @@ class MonitorService : Service() {
                 notifyState("命令の結果をGASへ送信できませんでした")
             }
         }
+        return succeeded
     }
 
     private suspend fun locationLoop() {

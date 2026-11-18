@@ -3,6 +3,13 @@ package jp.a09848281.remotecamera
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.Intent
+import android.content.IntentFilter
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
+import android.media.AudioManager
+import android.media.MediaRecorder
+import android.os.BatteryManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +18,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import org.json.JSONObject
 import org.webrtc.*
+import org.webrtc.audio.AudioDeviceModule
+import org.webrtc.audio.JavaAudioDeviceModule
+import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.atan
@@ -30,7 +40,14 @@ class RtcEngine(
     private val iceStates = ConcurrentHashMap<String, PeerConnection.IceConnectionState>()
     private val disconnectTimers = ConcurrentHashMap<String, Job>()
     private var factory: PeerConnectionFactory? = null
+    private var audioDeviceModule: AudioDeviceModule? = null
     private var egl: EglBase? = null
+    private var currentCameraId: String? = null
+    private var flashlightEnabled = false
+    private var audioModeChanged = false
+    private var previousAudioMode = AudioManager.MODE_NORMAL
+    private var currentCaptureRatio = "16:9"
+    private var currentFpsLimit = 24
     private var capturer: CameraVideoCapturer? = null
     private var helper: SurfaceTextureHelper? = null
     private var videoSource: VideoSource? = null
@@ -50,22 +67,81 @@ class RtcEngine(
         val width: Int, val height: Int, val fps: Int, val bitrate: Int
     )
 
-    private fun profileFor(quality: String, dataMode: String): VideoProfile {
-        // Use 16:9 capture modes. The old 640x480 default caused a 4:3 crop
-        // and quality="720" accidentally fell through to VGA.
-        val base = when (quality) {
-            "360" -> VideoProfile(640, 360, 15, 420000)
-            "480" -> VideoProfile(854, 480, 20, 650000)
-            "1080" -> VideoProfile(1920, 1080, 24, 1800000)
-            "auto" -> VideoProfile(1280, 720, 20, 850000)
-            else -> VideoProfile(1280, 720, 24, 1000000)
+    private fun profileFor(
+        quality: String,
+        dataMode: String,
+        ratio: String = currentCaptureRatio,
+        fpsLimit: Int = currentFpsLimit
+    ): VideoProfile {
+        val tier = when (quality) { "360" -> 360; "480" -> 480; "1080" -> 1080; else -> 720 }
+        val dimensions = when (ratio) {
+            "4:3" -> when (tier) {
+                360 -> 640 to 480
+                480 -> 854 to 640
+                1080 -> 1440 to 1080
+                else -> 1280 to 960
+            }
+            "1:1" -> when (tier) {
+                360 -> 360 to 360
+                480 -> 480 to 480
+                1080 -> 1080 to 1080
+                else -> 720 to 720
+            }
+            "9:16" -> when (tier) {
+                360 -> 360 to 640
+                480 -> 480 to 854
+                1080 -> 1080 to 1920
+                else -> 720 to 1280
+            }
+            else -> when (tier) {
+                360 -> 640 to 360
+                480 -> 854 to 480
+                1080 -> 1920 to 1080
+                else -> 1280 to 720
+            }
         }
+        val baseFps = fpsLimit.coerceIn(15, 30)
+        val baseBitrate = when (tier) {
+            360 -> 650000
+            480 -> 1000000
+            1080 -> 3200000
+            else -> 1700000
+        }
+        val base = VideoProfile(dimensions.first, dimensions.second, baseFps, baseBitrate)
         return when (dataMode) {
-            "ultra" -> VideoProfile(640, 360, 10, 250000)
-            "save" -> VideoProfile(854, 480, 15, 450000)
-            "auto" -> base.copy(fps = minOf(base.fps, 20), bitrate = minOf(base.bitrate, 800000))
-            "high" -> base.copy(fps = minOf(base.fps, 30), bitrate = minOf(base.bitrate, 2000000))
+            "ultra" -> base.copy(fps = minOf(baseFps, 10), bitrate = 350000)
+            "save" -> base.copy(fps = minOf(baseFps, 15), bitrate = 650000)
+            "auto" -> base.copy(fps = minOf(baseFps, 20), bitrate = minOf(baseBitrate, 1200000))
+            "high" -> base.copy(fps = baseFps, bitrate = minOf(3500000, (baseBitrate * 1.25).toInt()))
             else -> base
+        }
+    }
+
+    private fun fallbackDimensions(ratio: String): List<Pair<Int, Int>> = when (ratio) {
+        "4:3" -> listOf(960 to 720, 640 to 480)
+        "1:1" -> listOf(720 to 720, 480 to 480)
+        "9:16" -> listOf(720 to 1280, 480 to 854, 360 to 640)
+        else -> listOf(960 to 540, 640 to 360)
+    }
+
+    private fun enterCommunicationAudioMode() {
+        val manager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (!audioModeChanged) {
+            previousAudioMode = manager.mode
+            audioModeChanged = true
+        }
+        manager.mode = AudioManager.MODE_IN_COMMUNICATION
+    }
+
+    private fun restoreAudioMode() {
+        if (!audioModeChanged) return
+        try {
+            val manager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            manager.mode = previousAudioMode
+        } catch (e: Exception) {
+            Log.w("RemoteCameraRTC", "Could not restore Android audio mode", e)
+        } finally {
+            audioModeChanged = false
         }
     }
 
@@ -207,7 +283,13 @@ class RtcEngine(
                 PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions()
             )
             egl = EglBase.create()
+            audioDeviceModule = JavaAudioDeviceModule.builder(context.applicationContext)
+                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                .setUseHardwareAcousticEchoCanceler(true)
+                .setUseHardwareNoiseSuppressor(true)
+                .createAudioDeviceModule()
             factory = PeerConnectionFactory.builder()
+                .setAudioDeviceModule(audioDeviceModule!!)
                 .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl!!.eglBaseContext, true, true))
                 .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl!!.eglBaseContext))
                 .createPeerConnectionFactory()
@@ -216,41 +298,42 @@ class RtcEngine(
         val enumerator = Camera2Enumerator(context)
         val names = enumerator.deviceNames
         val selected = chooseWidestBackCamera(enumerator, names)
+        currentCameraId = selected
         frontCamera = enumerator.isFrontFacing(selected)
-        capturer = enumerator.createCapturer(selected, createCameraEventsHandler()) ?: error("カメラを開けません。")
         helper = SurfaceTextureHelper.create("RemoteCameraCapture", egl!!.eglBaseContext)
-        capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
-        val profile = profileFor(currentQuality, currentDataMode)
-        captureWidth = profile.width
-        captureHeight = profile.height
-        captureFps = profile.fps
-        deferredFormatMessageFor = null
-        try {
-            capturer!!.startCapture(profile.width, profile.height, profile.fps)
-        } catch (first: Exception) {
-            Log.w("RemoteCameraRTC", "Preferred 16:9 format failed; retrying 960x540", first)
-            try { capturer?.dispose() } catch (_: Exception) {}
-            capturer = enumerator.createCapturer(selected, createCameraEventsHandler()) ?: throw first
-            capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
-            try {
-                capturer!!.startCapture(960, 540, 20)
-                captureWidth = 960
-                captureHeight = 540
-                captureFps = 20
-            } catch (second: Exception) {
-                Log.w("RemoteCameraRTC", "960x540 failed; retrying 640x360", second)
-                try { capturer?.dispose() } catch (_: Exception) {}
-                capturer = enumerator.createCapturer(selected, createCameraEventsHandler()) ?: throw second
-                capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
-                capturer!!.startCapture(640, 360, 15)
-                captureWidth = 640
-                captureHeight = 360
-                captureFps = 15
+        val profile = profileFor(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)
+        val captureSizes = (listOf(profile.width to profile.height) + fallbackDimensions(currentCaptureRatio)).distinct()
+        var lastCaptureError: Exception? = null
+        var captureStarted = false
+        captureLoop@ for ((width, height) in captureSizes) {
+            for (fps in listOf(30, 24, 20, 15)) {
+                val candidate = enumerator.createCapturer(selected, createCameraEventsHandler())
+                    ?: throw IllegalStateException("カメラを開けません。")
+                try {
+                    candidate.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
+                    candidate.startCapture(width, height, fps)
+                    capturer = candidate
+                    captureWidth = width
+                    captureHeight = height
+                    captureFps = fps
+                    captureStarted = true
+                    Log.i("RemoteCameraRTC", "Camera capture started: ${width}x${height}@${fps}")
+                    break@captureLoop
+                } catch (e: Exception) {
+                    lastCaptureError = e
+                    Log.w("RemoteCameraRTC", "Capture format failed: ${width}x${height}@${fps}", e)
+                    try { candidate.stopCapture() } catch (_: Exception) {}
+                    try { candidate.dispose() } catch (_: Exception) {}
+                }
             }
         }
+        if (!captureStarted) throw lastCaptureError ?: IllegalStateException("対応する撮影形式がありません。")
+        deferredFormatMessageFor = null
+        enterCommunicationAudioMode()
         videoTrack = factory!!.createVideoTrack("remote-camera-video", videoSource).apply { setEnabled(true) }
         audioSource = factory!!.createAudioSource(MediaConstraints())
         audioTrack = factory!!.createAudioTrack("remote-camera-audio", audioSource).apply { setEnabled(true) }
+        Log.i("RemoteCameraRTC", "Android microphone audio track created and enabled")
         onState("カメラ・マイクを起動しました")
     }
 
@@ -358,14 +441,18 @@ class RtcEngine(
                         override fun onStateChange() {
                             onState("操作用データチャネル：" + channel.state().name)
                         }
-                        override fun onMessage(buffer: DataChannel.Buffer) {
+                                override fun onMessage(buffer: DataChannel.Buffer) {
                             if (buffer.binary) return
                             try {
                                 val bytes = ByteArray(buffer.data.remaining())
                                 buffer.data.get(bytes)
                                 val message = JSONObject(String(bytes, Charsets.UTF_8))
                                 if (message.optString("type") == "command") {
-                                    onControlCommand(message)
+                                    if (message.optString("name") == "get_device_status") {
+                                        sendDeviceStatus(message.optString("requestId"))
+                                    } else {
+                                        onControlCommand(message)
+                                    }
                                 }
                             } catch (e: Exception) {
                                 Log.w("RemoteCameraRTC", "Invalid control data-channel message", e)
@@ -466,50 +553,118 @@ class RtcEngine(
         val camera = capturer ?: return
         val wantFront = facing == "front"
         if (wantFront == frontCamera) return
+        if (flashlightEnabled) {
+            try { setFlashlight(false) } catch (_: Exception) {}
+        }
         camera.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
             override fun onCameraSwitchDone(isFrontCamera: Boolean) {
                 frontCamera = isFrontCamera
+                val enumerator = Camera2Enumerator(context)
+                currentCameraId = enumerator.deviceNames.firstOrNull {
+                    if (isFrontCamera) enumerator.isFrontFacing(it) else enumerator.isBackFacing(it)
+                }
+                flashlightEnabled = false
                 onState(if (isFrontCamera) "前面カメラ" else "背面カメラ")
             }
             override fun onCameraSwitchError(error: String) { onState("カメラ切替失敗: $error") }
         })
     }
 
+    @Synchronized
+    fun setFlashlight(enabled: Boolean) {
+        val id = currentCameraId ?: throw IllegalStateException("カメラIDを取得できません。")
+        if (frontCamera && enabled) throw IllegalStateException("ライトは背面カメラで使用してください。")
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val available = manager.getCameraCharacteristics(id)
+            .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        if (!available && enabled) throw IllegalStateException("このカメラにはライトがありません。")
+        try {
+            manager.setTorchMode(id, enabled)
+            flashlightEnabled = enabled
+            onState(if (enabled) "スマホのライトをONにしました" else "スマホのライトをOFFにしました")
+        } catch (e: Exception) {
+            flashlightEnabled = false
+            throw IllegalStateException("ライトを切り替えできません。カメラが使用中、または端末が非対応の可能性があります: ${e.message}")
+        }
+    }
+
+    fun sendControlMessage(message: JSONObject) {
+        val bytes = message.toString().toByteArray(Charsets.UTF_8)
+        dataChannels.values.forEach { channel ->
+            if (channel.state() == DataChannel.State.OPEN) {
+                try { channel.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false)) }
+                catch (e: Exception) { Log.w("RemoteCameraRTC", "Could not send control response", e) }
+            }
+        }
+    }
+
+    private fun sendDeviceStatus(requestId: String) {
+        val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val battery = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        val status = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val temperature = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
+        val flashAvailable = try {
+            val id = currentCameraId
+            id != null && (context.getSystemService(Context.CAMERA_SERVICE) as CameraManager)
+                .getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+        } catch (_: Exception) { false }
+        sendControlMessage(JSONObject()
+            .put("type", "device_status")
+            .put("requestId", requestId)
+            .put("batteryPercent", battery)
+            .put("charging", plugged != 0 || status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL)
+            .put("batteryTempC", if (temperature >= 0) temperature / 10.0 else JSONObject.NULL)
+            .put("flashlightAvailable", flashAvailable)
+            .put("flashlightOn", flashlightEnabled)
+            .put("cameraFacing", if (frontCamera) "front" else "back")
+        )
+    }
+
     fun setQuality(quality: String, dataMode: String) {
+        setVideoProfile(quality, dataMode, currentCaptureRatio, currentFpsLimit)
+    }
+
+    @Synchronized
+    fun setVideoProfile(quality: String, dataMode: String, ratio: String, fpsLimit: Int) {
         val normalizedQuality = if (quality in listOf("auto", "360", "480", "720", "1080")) quality else "720"
         val normalizedMode = if (dataMode in listOf("auto", "ultra", "save", "standard", "high")) dataMode else "standard"
-        if (normalizedQuality == currentQuality && normalizedMode == currentDataMode) return
+        val normalizedRatio = if (ratio in listOf("16:9", "4:3", "1:1", "9:16")) ratio else "16:9"
+        val normalizedFps = fpsLimit.coerceIn(15, 30)
+        val changed = normalizedQuality != currentQuality || normalizedMode != currentDataMode ||
+            normalizedRatio != currentCaptureRatio || normalizedFps != currentFpsLimit
+        if (!changed) return
 
         currentQuality = normalizedQuality
         currentDataMode = normalizedMode
-        val profile = profileFor(currentQuality, currentDataMode)
+        currentCaptureRatio = normalizedRatio
+        currentFpsLimit = normalizedFps
+        val profile = profileFor(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)
         val camera = capturer
         val formatChanged = camera != null &&
-            (profile.width != captureWidth || profile.height != captureHeight || profile.fps != captureFps)
+            (profile.width != captureWidth || profile.height != captureHeight)
 
-        // Never reconfigure Camera2 in the middle of a live WebRTC session.
-        // Camera format changes can pause the capture pipeline and cause a visible freeze.
+        // Live FPS/bitrate updates do not restart Camera2. Resolution/aspect changes
+        // remain deferred until the next session to avoid a visible video freeze.
         if (formatChanged && peers.isEmpty()) {
             try {
-                camera!!.changeCaptureFormat(profile.width, profile.height, profile.fps)
+                camera!!.changeCaptureFormat(profile.width, profile.height, captureFps)
                 captureWidth = profile.width
                 captureHeight = profile.height
-                captureFps = profile.fps
                 deferredFormatMessageFor = null
             } catch (e: Exception) {
                 Log.w("RemoteCameraRTC", "Could not change camera capture format while idle", e)
-                onState("画質設定は保存しました。カメラ解像度は次回接続時に適用します。")
+                onState("画角・解像度は次回接続時に適用します。")
             }
         } else if (formatChanged && peers.isNotEmpty()) {
             val key = "${profile.width}x${profile.height}@${profile.fps}/${profile.bitrate}"
             if (deferredFormatMessageFor != key) {
                 deferredFormatMessageFor = key
-                onState("画質設定を受け付けました。送信レートは即時変更し、解像度は次回接続時に適用します。")
+                onState("FPSと送信レートは即時反映しました。画角・解像度は次回接続時に適用します。")
             }
         }
-
-        // Bitrate and maximum send frame rate are updated on the sender without
-        // stopping Camera2. Resolution changes are intentionally deferred.
         applySenderParameters(profile)
     }
 
@@ -532,6 +687,11 @@ class RtcEngine(
 
     @Synchronized
     private fun stopMedia() {
+        if (flashlightEnabled) {
+            try { currentCameraId?.let { (context.getSystemService(Context.CAMERA_SERVICE) as CameraManager).setTorchMode(it, false) } }
+            catch (e: Exception) { Log.w("RemoteCameraRTC", "Could not turn off flashlight during media stop", e) }
+            flashlightEnabled = false
+        }
         try { capturer?.stopCapture() } catch (_: Exception) {}
         try { capturer?.dispose() } catch (_: Exception) {}
         capturer = null
@@ -545,6 +705,7 @@ class RtcEngine(
         videoSource = null
         try { audioSource?.dispose() } catch (_: Exception) {}
         audioSource = null
+        restoreAudioMode()
     }
 
     fun dispose() {
@@ -559,6 +720,9 @@ class RtcEngine(
         stopMedia()
         try { factory?.dispose() } catch (_: Exception) {}
         factory = null
+        try { audioDeviceModule?.release() } catch (_: Exception) {}
+        audioDeviceModule = null
+        restoreAudioMode()
         try { egl?.release() } catch (_: Exception) {}
         egl = null
     }

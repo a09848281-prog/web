@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase]
+    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase, rebuild-v3.9-camera-controls-stability]
     paths:
       - "android/**"
       - "web/**"
@@ -67,7 +67,7 @@ jobs:
           if (!android.includes('ACTION_STOP') || !android.includes('addAction(') ||
               !android.includes('stopMonitoringNow(') ||
               !android.includes('Offer handling failed; keep foreground service alive') ||
-              !rtc.includes('retrying 960x540') ||
+              !rtc.includes('Capture format failed:') ||
               !main.includes('refreshMonitoringButtons') ||
               !main.includes('GASでペアリング確認済み')) {
             throw new Error('Background stop action, RTC recovery, or server-verified pairing state is missing.');
@@ -92,7 +92,7 @@ jobs:
           if (!rtc.includes('changeCaptureFormat') ||
               !rtc.includes('chooseWidestBackCamera') ||
               !rtc.includes('stun:stun.l.google.com:19302') ||
-              !rtc.includes('VideoProfile(1280, 720, 24')) {
+              !rtc.includes('"16:9"') || !rtc.includes('"9:16"')) {
             throw new Error('Wide-angle camera preference, 16:9 profiles or STUN configuration is missing.');
           }
           if (!android.includes('acquireBestLocation') ||
@@ -102,7 +102,7 @@ jobs:
               !main.includes('カメラ・マイクの権限は必須、位置情報は任意です')) {
             throw new Error('Optional location permission or dual-provider location acquisition is missing.');
           }
-          if (!rtc.includes('Never reconfigure Camera2 in the middle of a live WebRTC session') ||
+          if (!rtc.includes('Live FPS/bitrate updates do not restart Camera2') ||
               !rtc.includes('Close stale sessions after') ||
               !rtc.includes('Ignoring duplicate offer for active session') ||
               !rtc.includes('onCameraDisconnected()') ||
@@ -111,7 +111,7 @@ jobs:
               !rtc.includes('deferredFormatMessageFor')) {
             throw new Error('Smooth quality updates, stale/duplicate peer cleanup, or camera recovery is missing.');
           }
-          const qualityCall = 'rtc?.setQuality(currentQuality, currentDataMode)';
+          const qualityCall = 'rtc?.setVideoProfile(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)';
           const offerCall = 'rtc?.handleOffer(session, signal.optString("sdp"))';
           if (!android.includes(qualityCall) || android.indexOf(qualityCall) > android.indexOf(offerCall)) {
             throw new Error('Selected quality must be applied before the initial Camera2 capture begins.');
@@ -163,8 +163,8 @@ jobs:
               !rtc.includes('delay(8000L)')) {
             throw new Error('v3.8 Android data-channel command receiver or ICE recovery grace timer is missing.');
           }
-          if (!android.includes('" (v3.8 Preview)"') ||
-              !manifest.includes('android:label="Remote Camera 3.8 Preview"')) {
+          if (!android.includes('" (v3.9 Preview)"') ||
+              !manifest.includes('android:label="Remote Camera 3.9 Preview"')) {
             throw new Error('v3.8 preview app must be clearly distinguishable in Android launcher and paired-device list.');
           }
           if (!android.includes('rtc?.hasConnectedPeer() == true') ||
@@ -189,7 +189,40 @@ jobs:
           if (/firebase/i.test(fs.readFileSync('android/app/build.gradle.kts', 'utf8'))) {
             throw new Error('Firebase dependency is forbidden in this project.');
           }
-          console.log('v3.8 direct WebRTC controls, local iPad audio gain, video watchdog, bounded GAS retries, optimized Sheets reads and Firebase-free dependencies OK.');
+          for (const id of ['captureRatio','fpsLimit','snapshot','flashlight','keepAwake','refreshStatus','androidStatus','audioState']) {
+            if (!ids.includes(id)) throw new Error('Missing v3.9 viewer control: ' + id);
+          }
+          if (!app.includes('function restoreRemotePlayback') ||
+              !app.includes('webkitendfullscreen') ||
+              !app.includes('function takeSnapshot') ||
+              !app.includes('function updateAdaptiveQuality') ||
+              !app.includes('navigator.wakeLock') ||
+              !app.includes('controlChannel.onmessage') ||
+              !app.includes('command_result') ||
+              !html.includes('16:9（横長・標準）')) {
+            throw new Error('v3.9 browser camera controls, fullscreen playback recovery, adaptive streaming or new features are incomplete.');
+          }
+          if (!rtc.includes('JavaAudioDeviceModule.builder') ||
+              !rtc.includes('MediaRecorder.AudioSource.VOICE_COMMUNICATION') ||
+              !rtc.includes('fun setVideoProfile(') ||
+              !rtc.includes('fun setFlashlight(') ||
+              !rtc.includes('fun sendDeviceStatus(') ||
+              !rtc.includes('FLASH_INFO_AVAILABLE')) {
+            throw new Error('v3.9 Android microphone module, profile controls, torch or device-status API is missing.');
+          }
+          if (!main.includes('localDataModeSpinner') ||
+              !main.includes('EXTRA_LOCAL_DATA_MODE') ||
+              !android.includes('EXTRA_LOCAL_DATA_MODE') ||
+              !android.includes('"flashlight" ->') ||
+              !android.includes('put("type", "command_result")') ||
+              !android.includes('v3.9 Preview')) {
+            throw new Error('v3.9 Android local standby data-mode selector or command response flow is missing.');
+          }
+          if (!gas.includes('captureRatio:') || !gas.includes('fpsLimit:') ||
+              !gas.includes('"flashlight"') || !gas.includes('3.9.0')) {
+            throw new Error('v3.9 GAS compatibility, saved capture settings or flashlight command is missing.');
+          }
+          console.log('v3.9 aspect/FPS settings, audio input route, flash control, five viewer features, fullscreen restoration, and Firebase-free dependencies OK.');
           NODE
       - name: Verify v3.8 Android and Web version alignment
         run: |
@@ -198,14 +231,14 @@ jobs:
           const gradle = fs.readFileSync('android/app/build.gradle.kts', 'utf8');
           const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
           const workflow = fs.readFileSync('.github/workflows/build-and-pages.yml', 'utf8');
-          if (!/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v38preview"/.test(gradle) ||
-              !/versionCode\s*=\s*308/.test(gradle) ||
-              !/versionName\s*=\s*"3\.8\.0"/.test(gradle) ||
-              config.appVersion !== '3.8.0' ||
-              !workflow.includes('name: remote-camera-debug-apk-v3.8')) {
-            throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v3.8.0.');
+          if (!/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v39preview"/.test(gradle) ||
+              !/versionCode\s*=\s*309/.test(gradle) ||
+              !/versionName\s*=\s*"3\.9\.0"/.test(gradle) ||
+              config.appVersion !== '3.9.0' ||
+              !workflow.includes('name: remote-camera-debug-apk-v3.9')) {
+            throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v3.9.0.');
           }
-          console.log('Android 3.8.0 / versionCode 308 / Web 3.8.0 / APK artifact v3.8 are aligned.');
+          console.log('Android 3.9.0 / versionCode 309 / Web 3.9.0 / APK artifact v3.9 are aligned.');
           NODE
       - name: Build Android debug APK
         working-directory: android
@@ -229,7 +262,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-camera-debug-apk-v3.8
+          name: remote-camera-debug-apk-v3.9
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
