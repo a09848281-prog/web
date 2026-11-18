@@ -322,8 +322,10 @@ class MonitorService : Service() {
                                             val currentApi = api ?: continue
                                             rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState)
                                         }
-                                        rtc?.handleOffer(session, signal.optString("sdp"))
+                                        // Apply the selected profile before creating Camera2 and the first peer.
+                                        // The sender bitrate/FPS are applied inside handleOffer after tracks are added.
                                         rtc?.setQuality(currentQuality, currentDataMode)
+                                        rtc?.handleOffer(session, signal.optString("sdp"))
                                         notifyState("Web接続中：カメラ・マイクを使用しています")
                                     } catch (e: Exception) {
                                         Log.e("RemoteCameraService", "Offer handling failed; keep foreground service alive", e)
