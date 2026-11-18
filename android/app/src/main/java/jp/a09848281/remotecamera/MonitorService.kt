@@ -179,7 +179,8 @@ class MonitorService : Service() {
             startIntent.getStringExtra(EXTRA_AUDIO_PICKUP_MODE) ?: prefs.getString("audioPickupMode", "ambient")
         )
         if (localDataMode !in listOf("web", "ultra", "save", "standard", "high")) localDataMode = "web"
-        prefs.edit().putString("gasUrl", gasUrl).putString("localDataMode", localDataMode).apply()
+        prefs.edit().putString("gasUrl", gasUrl).putString("localDataMode", localDataMode)
+            .putString("audioPickupMode", audioPickupMode).apply()
         startMonitoringForeground()
 
         if (pollJob?.isActive != true) pollJob = scope.launch { pollLoop() }
