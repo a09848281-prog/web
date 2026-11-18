@@ -151,6 +151,8 @@ jobs:
               !app.includes('requestVideoFrameCallback') ||
               !app.includes('function setReceiveVolume') ||
               !app.includes('Non-trickle ICE: no further GAS signal polling is needed') ||
+              !app.includes('GASバージョン不一致') ||
+              !app.includes('health.apiVersion') ||
               !html.includes('id="videoState"') ||
               !html.includes('受信音量（iPad）')) {
             throw new Error('v3.8 WebRTC control channel, video-frame watchdog, local audio gain or UI indicator is missing.');
