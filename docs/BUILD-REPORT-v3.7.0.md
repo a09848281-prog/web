@@ -1,20 +1,20 @@
 # Remote Camera v3.7.0 Build Report
 
 - Branch: `rebuild-v3.7-stability-ui`
-- Commit: `59342d7fc1170041a8edcdf415ae0581285f7744`
+- Commit: `57352b1af833b3a59b700d52b239df5e855e6548`
 - Android application ID: `jp.a09848281.remotecamera`
 - Version name: `3.7.0`
 - Version code: `307`
-- Workflow: [Build Android APK #101](https://github.com/a09848281-prog/web/actions/runs/44269891208)
+- Workflow: [Build Android APK #104](https://github.com/a09848281-prog/web/actions/runs/44270585920)
 - Workflow run ID: `44269891208`
 - Artifact: `remote-camera-debug-apk-v3.7`
-- Artifact ID: `14411334293`
+- Artifact ID: `14411898040`
 - Artifact status: successful, not expired
-- Artifact ZIP size: 26,080,787 bytes
+- Artifact ZIP size: 26,080,786 bytes
 - APK size: 50,793,405 bytes
-- ZIP SHA-256: `bf11f3148866ce24e6ad4897e988e0c635230b79aa4afa17b246212dede800bf`
-- APK SHA-256: `f00737871d6196a834a50d08a98c8afc96f3bc79449493aac2c55bc10d71d009`
-- Artifact expiry: 2026-12-18 08:47 UTC
+- ZIP SHA-256: `8de96a6b001ccad7960e917d8b777d53957849f7628d8ef0077f62e2d6da183b`
+- APK SHA-256: `33f07b893c32b8284d0c9f1e9cd056f38e86b534c2e7e42e05c4bfacd8f0ff5d`
+- Artifact expiry: 2026-12-18 08:52 UTC
 
 ## Verified workflow steps
 
@@ -28,13 +28,16 @@
 | APK manifest ACCESS_NETWORK_STATE permission | PASS |
 | APK manifest CAMERA permission | PASS |
 | APK manifest RECORD_AUDIO permission | PASS |
-| APK artifact upload | PASS |
+| APK artifact upload | PASS
+| Android/Web/artifact version alignment | PASS |
 
 ## Source issues fixed during this build
 
 1. Added the missing Kotlin `kotlinx.coroutines.delay` import used by bounded camera recovery. Earlier Gradle build logs reported an unresolved reference at `RtcEngine.kt`.
-2. Fixed a CI assertion that searched for single-quoted JavaScript text while the implementation correctly used double quotes.
-3. Limited Pages deployment to `main`. Feature branches are used for validation and are not published to the live Pages environment.
+2. Fixed CI assertions that used the wrong quoting and escaping, which had caused false failures even when the implementation was present.
+3. Added a guard so a slow initial video frame does not immediately trigger freeze recovery; the watchdog only counts missed decoded frames after at least one frame has arrived.
+4. Added an Android/Web/artifact version-alignment check.
+5. Limited Pages deployment to `main`. Feature branches are used for validation and are not published to the live Pages environment.
 
 ## Important verification boundary
 
