@@ -256,7 +256,13 @@ class RtcEngine(
                 return
             }
             Log.i("RemoteCameraRTC", "ACCESS_NETWORK_STATE permission verified before WebRTC initialization")
-            peers.remove(sessionId)?.close()
+            // GAS polling can repeat a signal if a previous poll was interrupted
+            // before its sequence cursor was committed. Do not tear down a live
+            // camera/peer connection for a duplicate offer with the same session ID.
+            if (peers.containsKey(sessionId)) {
+                Log.i("RemoteCameraRTC", "Ignoring duplicate offer for active session " + sessionId)
+                return
+            }
             ensureMedia()
             // STUN helps peers discover a usable public-facing candidate. It does
             // not replace TURN, so restrictive networks may still require a relay.
