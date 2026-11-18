@@ -15,14 +15,18 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
 
 class MonitorService : Service() {
     companion object {
@@ -429,38 +433,107 @@ class MonitorService : Service() {
     }
 
     private suspend fun requestLocation(mode: String) {
-        val granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!granted) {
-            notifyState("位置情報の権限がありません")
+        val fineGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fineGranted && !coarseGranted) {
+            notifyState("位置情報の権限がありません。Android設定で許可してください")
             return
         }
+
         val manager = getSystemService(LOCATION_SERVICE) as LocationManager
-        val provider = when {
-            manager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-            manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-            else -> {
-                notifyState("GPS・ネットワーク位置情報が無効です")
-                return
-            }
-        }
-        lastLocationAttempt = System.currentTimeMillis()
-        val cached = try { manager.getLastKnownLocation(provider) } catch (_: SecurityException) { null }
-        if (cached != null && System.currentTimeMillis() - cached.time < 120000L) {
-            saveLocation(cached, mode)
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            .filter { provider -> try { manager.isProviderEnabled(provider) } catch (_: Exception) { false } }
+        if (providers.isEmpty()) {
+            notifyState("位置情報サービスがOFFです。Androidの位置情報をONにしてください")
             return
         }
+
+        lastLocationAttempt = System.currentTimeMillis()
+        notifyState("位置情報を取得中（GPS・ネットワークを確認）")
         try {
-            val listener = object : LocationListener {
-                override fun onLocationChanged(location: Location) {
-                    scope.launch { saveLocation(location, mode) }
-                    try { manager.removeUpdates(this) } catch (_: Exception) {}
+            val now = System.currentTimeMillis()
+            val cached = providers.mapNotNull { provider ->
+                try { manager.getLastKnownLocation(provider) } catch (_: SecurityException) { null }
+            }.filter { location ->
+                val age = now - location.time
+                age in 0..120000L
+            }.minByOrNull { it.accuracy }
+
+            val fresh = acquireBestLocation(manager, providers)
+            val selected = fresh ?: cached
+            if (selected != null) {
+                saveLocation(selected, mode)
+            } else {
+                notifyState("位置情報を取得できません。位置情報ON・屋外・権限（正確な位置情報）を確認してください")
+            }
+        } catch (e: SecurityException) {
+            notifyState("位置情報の権限が不足しています。正確な位置情報を許可してください")
+        } catch (e: Exception) {
+            Log.e("RemoteCameraService", "Location request failed", e)
+            notifyState("位置情報取得失敗：" + (e.message ?: "設定・権限を確認してください"))
+        }
+    }
+
+    /**
+     * Listen to GPS and network providers together. Keep the most accurate fix,
+     * finish early for a good fix, and always unregister the listener.
+     */
+    private suspend fun acquireBestLocation(
+        manager: LocationManager,
+        providers: List<String>
+    ): Location? {
+        var activeListener: LocationListener? = null
+        val handler = Handler(Looper.getMainLooper())
+        var finishRunnable: Runnable? = null
+        val best = AtomicReference<Location?>(null)
+        return try {
+            withTimeoutOrNull(18000L) {
+                suspendCancellableCoroutine { continuation ->
+                    val listener = object : LocationListener {
+                        override fun onLocationChanged(location: Location) {
+                            val previous = best.get()
+                            if (previous == null || location.accuracy < previous.accuracy ||
+                                (location.accuracy == previous.accuracy && location.time > previous.time)) {
+                                best.set(location)
+                            }
+                            if (location.accuracy <= 35f && continuation.isActive) {
+                                finishRunnable?.let { handler.removeCallbacks(it) }
+                                continuation.resume(best.get())
+                            }
+                        }
+                        override fun onProviderEnabled(provider: String) {}
+                        override fun onProviderDisabled(provider: String) {}
+                    }
+                    activeListener = listener
+                    finishRunnable = Runnable {
+                        if (continuation.isActive) continuation.resume(best.get())
+                    }
+                    var registered = false
+                    providers.forEach { provider ->
+                        try {
+                            manager.requestLocationUpdates(
+                                provider, 1000L, 0f, listener, Looper.getMainLooper()
+                            )
+                            registered = true
+                        } catch (e: SecurityException) {
+                            Log.w("RemoteCameraService", "Location permission denied for " + provider, e)
+                        } catch (e: Exception) {
+                            Log.w("RemoteCameraService", "Could not start provider " + provider, e)
+                        }
+                    }
+                    handler.postDelayed(finishRunnable!!, 12000L)
+                    if (!registered && continuation.isActive) {
+                        handler.removeCallbacks(finishRunnable!!)
+                        continuation.resume(null)
+                    }
+                    continuation.invokeOnCancellation {
+                        finishRunnable?.let { handler.removeCallbacks(it) }
+                    }
                 }
             }
-            manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
-            notifyState("位置情報を取得中")
-        } catch (e: Exception) {
-            notifyState("位置情報取得失敗：設定・権限を確認")
+        } finally {
+            try { activeListener?.let { manager.removeUpdates(it) } } catch (_: Exception) {}
+            finishRunnable?.let { handler.removeCallbacks(it) }
         }
     }
 
