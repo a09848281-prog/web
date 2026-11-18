@@ -12,6 +12,7 @@ import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Spinner
+import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -30,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var stopButton: Button
     private lateinit var waitModeSpinner: Spinner
     private lateinit var localDataModeSpinner: Spinner
+    private lateinit var audioPickupModeSpinner: Spinner
     private lateinit var remoteCaptureSwitch: Switch
     private lateinit var keepAwakeSwitch: Switch
     private var selectedWaitMode = "standard"
@@ -41,6 +43,13 @@ class MainActivity : Activity() {
         "節約：通信量を抑える", "標準：画質と通信量のバランス", "高画質：通信量多め"
     )
     private var selectedLocalDataMode = "web"
+    private var selectedAudioPickupMode = "ambient"
+    private val audioPickupModeKeys = listOf("ambient", "balanced", "voice")
+    private val audioPickupModeLabels = listOf(
+        "環境音重視：小さな周囲の音を優先",
+        "バランス：環境音と雑音低減の両立",
+        "声重視：通話向けの雑音・反響低減"
+    )
     private var gasUrl = ""
     private val prefs by lazy { getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE) }
 
@@ -110,6 +119,29 @@ class MainActivity : Activity() {
         selectedLocalDataMode = prefs.getString("localDataMode", "web") ?: "web"
         if (selectedLocalDataMode !in localDataModeKeys) selectedLocalDataMode = "web"
 
+        selectedAudioPickupMode = prefs.getString("audioPickupMode", "ambient") ?: "ambient"
+        if (selectedAudioPickupMode !in audioPickupModeKeys) selectedAudioPickupMode = "ambient"
+        audioPickupModeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                audioPickupModeLabels
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(audioPickupModeKeys.indexOf(selectedAudioPickupMode).coerceAtLeast(0))
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                    val mode = audioPickupModeKeys.getOrElse(position) { "ambient" }
+                    if (mode != selectedAudioPickupMode) {
+                        selectedAudioPickupMode = mode
+                        prefs.edit().putString("audioPickupMode", mode).apply()
+                        applyLocalSettingsToService()
+                        status.text = "マイクモードを保存しました。接続中の場合は次回のWeb接続から反映します。"
+                    }
+                }
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
+        }
+
         localDataModeSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@MainActivity,
@@ -174,6 +206,19 @@ class MainActivity : Activity() {
             setPadding(0, 12, 0, 4)
         })
         root.addView(localDataModeSpinner, LinearLayout.LayoutParams(-1, -2))
+        root.addView(TextView(this).apply {
+            text = "Androidマイクの集音モード"
+            textSize = 14f
+            setTextColor(0xFF586980.toInt())
+            setPadding(0, 14, 0, 4)
+        })
+        root.addView(audioPickupModeSpinner, LinearLayout.LayoutParams(-1, -2))
+        root.addView(TextView(this).apply {
+            text = "環境音重視は周囲の音を拾いやすくしますが、雑音やスピーカー音の回り込みも増えます。モード変更は現在の接続を切らず、次回接続から安全に反映します。"
+            textSize = 12f
+            setTextColor(0xFF66758B.toInt())
+            setPadding(0, 6, 0, 10)
+        })
         root.addView(refreshCodeButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(startButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(stopButton, LinearLayout.LayoutParams(-1, -2))
@@ -183,7 +228,11 @@ class MainActivity : Activity() {
             setTextColor(0xFF66758B.toInt())
             setPadding(0, 22, 0, 0)
         })
-        setContentView(root)
+        val scrollView = ScrollView(this).apply {
+            isFillViewport = true
+            addView(root)
+        }
+        setContentView(scrollView)
         loadRemoteConfig()
     }
 
@@ -221,6 +270,7 @@ class MainActivity : Activity() {
             .putString("waitMode", selectedWaitMode)
             .putBoolean("remoteCaptureEnabled", remoteCaptureSwitch.isChecked)
             .putBoolean("keepCpuAwake", keepAwakeSwitch.isChecked)
+            .putString("audioPickupMode", selectedAudioPickupMode)
             .apply()
         val requested = mutableListOf(
             Manifest.permission.CAMERA,
@@ -267,6 +317,7 @@ class MainActivity : Activity() {
             action = MonitorService.ACTION_START
             putExtra(MonitorService.EXTRA_GAS_URL, gasUrl)
             putExtra(MonitorService.EXTRA_LOCAL_DATA_MODE, selectedLocalDataMode)
+            putExtra(MonitorService.EXTRA_AUDIO_PICKUP_MODE, selectedAudioPickupMode)
         }
         try {
             ContextCompat.startForegroundService(this, intent)
@@ -294,6 +345,7 @@ class MainActivity : Activity() {
             putExtra(MonitorService.EXTRA_REMOTE_CAPTURE_ENABLED, remoteCaptureSwitch.isChecked)
             putExtra(MonitorService.EXTRA_KEEP_CPU_AWAKE, keepAwakeSwitch.isChecked)
             putExtra(MonitorService.EXTRA_LOCAL_DATA_MODE, selectedLocalDataMode)
+            putExtra(MonitorService.EXTRA_AUDIO_PICKUP_MODE, selectedAudioPickupMode)
         }
         try {
             startService(intent)

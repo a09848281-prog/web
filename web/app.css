@@ -88,3 +88,5 @@
 .audioMeterLabel meter{width:90px;height:14px}
 #pttLock,#remoteMute{min-height:44px}
 @media(max-width:650px){.audioMeterLabel{flex:1 1 100%;min-height:34px}}
+
+.audioControlHint{font-size:11px;color:#75849a;flex:1 1 100%;margin:1px 0 3px}

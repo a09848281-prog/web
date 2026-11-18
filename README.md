@@ -1,29 +1,34 @@
 # Android・iPad 遠隔監視カメラシステム
 
-## v3.9.0 プレビュー（実機テスト前）
+## v4.1.0 完全統合プレビュー（実機検証前）
 
-作業ブランチ：`rebuild-v3.9-camera-controls-stability`
-Android applicationId：`jp.a09848281.remotecamera.v39preview`
-Web/API version：`3.9.0`
+作業ブランチ：`rebuild-v4.1-complete-stable`  
+ベース：v4.0の音声改善 + v3.9までの全機能  
+Android applicationId：`jp.a09848281.remotecamera.v41preview`  
+Android versionCode：`410` / versionName：`4.1.0`  
+Web / GAS API version：`4.1.0`  
+Firebase：不使用
 
-### v3.9で追加・改善
-- Webから画角（16:9 / 4:3 / 1:1 / 9:16）とFPS（15 / 20 / 24 / 30）を指定できます。
-- 画質選択を360p / 480p / 720p / 1080pへ拡張し、標準ビットレートも見直しました。
-- 配信中はFPS・ビットレートを直接変更し、カメラの撮影サイズ変更は次回接続へ延期して映像停止を抑えます。
-- 全画面終了後、同じWebRTC映像ストリームの再生を復帰させる処理を追加しました。
-- AndroidのJavaAudioDeviceModuleと音声ルーティングを明示し、Androidマイク受信状態をWebに表示します。
-- Androidアプリ内から待機中の通信量モードを「Web側／超節約／節約／標準／高画質」へ切り替えられます。
-- Androidアプリの設定画面を開いても、Foreground Serviceを停止しない構造を維持します。
-- 新機能5つ：Androidライト操作、PNG静止画保存、画面スリープ防止、自動画質調整、Android電池情報表示。
-- Firebaseは使用していません。
+### v4.1の追加・統合
+- Androidマイクを「環境音重視／バランス／声重視」の3モードから選択可能。初期値は環境音重視。
+- 環境音重視ではMIC入力を使い、ハードウェアとWebRTCのエコーキャンセル／ノイズ抑制を抑えて周囲の音を残しやすくする。
+- マイクモード変更時は現在のWebRTC接続を維持し、次の新規接続から安全に反映。
+- Webの左側大型プッシュトーク、Pointer Capture、Space / Enterキー操作、送話ロック、3分安全自動解除。
+- Androidマイク受信レベルメーター、iPad/PC受信音量0〜200%、Android音声ミュート、Androidスピーカー（iPadからの送話再生）音量0〜100%。
+- Web Audio非対応時はHTML音声再生へフォールバックし、受信音量を100%に制限。
+- v3.9から画角、FPS、画質、ライト、静止画、画面スリープ防止、自動画質調整、Android端末情報、位置情報・地図・履歴、全画面復帰、自動再接続、バックグラウンド待機を継承。
+- Android設定画面を開いてもForeground Serviceと既存接続を停止しない。
+- 登録・ログイン機能なし。8桁コードによるペアリング方式を維持。
+- Firebaseは使用せず、GitHub Pages + GAS + Google Sheets + WebRTCを維持。
 
-**注意：** 画角・解像度は次回接続時に反映します。Androidのライトはカメラ使用中にOSから制限される機種があります。TURN中継はまだ設定していません。Galaxy A22 5G / Android 13 と iPad Safari の実機テスト前のプレビューです。
+**注意：** これは完成候補のプレビューです。CIでのビルド成功と、Galaxy A22 5G / Android 13・iPad Safariでの実機確認は別です。TURN中継は未構成のため異なるネットワーク間の接続を保証しません。Androidの強制停止・再起動直後・権限取消後など、OS制約下の遠隔起動は保証できません。環境音重視では周囲の雑音・エコーも増えます。
 
-手順：
-- [v3.9クイックスタート](docs/QUICKSTART-v3.9.0.md)
-- [GAS v3.9.0再デプロイ](docs/GAS-REDEPLOY-v3.9.0.md)
-- [v3.9機能と制限](docs/FEATURES-v3.9.0.md)
-- [v3.9ビルド検証結果（CI成功・実機待ち）](docs/BUILD-REPORT-v3.9.0.md)
+### v4.1 手順・仕様
+- [v4.1完全統合仕様書](docs/REMOTE-CAMERA-v4.1-SPEC.md)
+- [v4.1クイックスタート](docs/QUICKSTART-v4.1.0.md)
+- [GAS v4.1.0再デプロイ](docs/GAS-REDEPLOY-v4.1.0.md)
+- [v4.1実機テストチェックリスト](docs/TEST-PLAN-v4.1.0.md)
+- [v4.1 CIビルド検証結果・APKハッシュ](docs/BUILD-REPORT-v4.1.0.md)
 
 ---
 

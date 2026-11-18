@@ -53,6 +53,7 @@
         <p class="hint">FPSと通信量は接続中も反映します。画角・解像度の変更は、配信中のフリーズを防ぐため次回接続時に適用します。</p>
         <label>カメラ<select id="camera"><option value="back">背面</option><option value="front">前面</option></select></label>
         <label>受信音量（iPad） <output id="volumeValue">70%</output><input id="volume" type="range" min="0" max="200" value="70"></label>
+        <p class="hint">100%を超える設定はiPad/PC側で受信音声を増幅します。音割れや雑音も大きくなる場合があります。</p>
       </div>
     </details>
 
@@ -95,8 +96,9 @@
     </div>
     <div class="viewerControls">
       <button id="ptt" type="button" class="ptt pttProminent" disabled>🎙 押している間だけ話す</button>
-      <button id="pttLock" type="button" disabled>送話ロック OFF</button>
+      <button id="pttLock" type="button" disabled>送話ロック OFF</button><span class="audioControlHint">送話ロックで長押し不要・送話は3分で自動停止</span>
       <button id="remoteMute" type="button" disabled>🔊 Android音声 ON</button>
+      <label class="androidVolumeLabel">Androidスピーカー音量（iPadからの送話） <output id="androidSpeakerVolumeValue">70%</output><input id="androidSpeakerVolume" type="range" min="0" max="100" value="70" disabled></label>
       <label class="audioMeterLabel">Androidマイク音量 <meter id="audioLevel" min="0" max="1" value="0"></meter><output id="audioLevelText">待機中</output></label>
       <button id="fullscreen" type="button">全画面</button>
       <button id="fitMode" type="button">全体表示</button>

@@ -15,6 +15,7 @@ const S = {
   remoteAudioMuted: false,
   remoteAnalyser: null,
   audioMeterFrame: null,
+  pttSafetyTimer: null,
   session: "",
   seq: 0,
   map: null,
@@ -43,6 +44,7 @@ const S = {
   remoteAudioSource: null,
   remoteVideoStream: null,
   receiveVolume: 70,
+  androidSpeakerVolume: 70,
   captureRatio: "16:9",
   fpsLimit: 24,
   appliedAdaptiveMode: "standard",
@@ -231,6 +233,7 @@ function setControlsEnabled(enabled) {
   $("ptt").disabled = !S.pc;
   $("pttLock").disabled = !S.pc;
   $("remoteMute").disabled = !S.pc;
+  $("androidSpeakerVolume").disabled = !S.pc;
   $("snapshot").disabled = !S.pc;
   $("refreshStatus").disabled = !S.pc;
   if (!S.pc) updateFlashlightButton(false, false);
@@ -547,17 +550,24 @@ function prepareAudioOutput() {
 function attachRemoteAudio() {
   const liveTracks = S.remoteAudioTracks.filter(track => track.readyState === "live");
   if (!liveTracks.length) {
+    stopAudioMeter();
     $("audioState").textContent = "Androidマイク待機中";
     return;
   }
   if (!prepareAudioOutput()) {
     $("remoteVideo").muted = false;
     setReceiveVolume(S.receiveVolume, false);
-    $("audioState").textContent = "Androidマイク受信中（Safari標準音声）";
+    $("audioState").textContent = S.receiveVolume > 100
+      ? "Androidマイク受信中（この環境では受信音量100%まで）"
+      : "Androidマイク受信中（Safari標準音声）";
     return;
   }
   try {
-    if (S.remoteAudioSource) S.remoteAudioSource.disconnect();
+    if (S.remoteAudioSource) {
+      try { S.remoteAudioSource.disconnect(); } catch (_) {}
+      S.remoteAudioSource = null;
+    }
+    stopAudioMeter();
     const audioStream = new MediaStream(liveTracks);
     S.remoteAudioSource = S.audioContext.createMediaStreamSource(audioStream);
     S.remoteAnalyser = S.audioContext.createAnalyser();
@@ -595,6 +605,9 @@ function startAudioMeter() {
 function stopAudioMeter() {
   if (S.audioMeterFrame !== null) cancelAnimationFrame(S.audioMeterFrame);
   S.audioMeterFrame = null;
+  if (S.remoteAnalyser) {
+    try { S.remoteAnalyser.disconnect(); } catch (_) {}
+  }
   S.remoteAnalyser = null;
   $("audioLevel").value = 0;
   $("audioLevelText").textContent = "待機中";
@@ -769,7 +782,7 @@ function setReceiveVolume(value, persist = true) {
   if (S.remoteGain && S.audioContext) {
     S.remoteGain.gain.setTargetAtTime(S.receiveVolume / 100, S.audioContext.currentTime, 0.035);
   } else if ($("remoteVideo")) {
-    try { $("remoteVideo").volume = S.receiveVolume / 100; } catch (_) {}
+    try { $("remoteVideo").volume = Math.min(100, S.receiveVolume) / 100; } catch (_) {}
   }
   if (persist) {
     try { localStorage.setItem("rc_receive_volume_v1", String(S.receiveVolume)); } catch (_) {}
@@ -950,6 +963,9 @@ async function connect(automatic = false) {
       status(state === "connected" ? "通信接続済み" : state, state === "connected");
       $("streamState").textContent = state === "connected" ? "通信チャネル接続中" : "接続処理中";
       if (state === "connected") {
+        sendControlCommand("volume", { percent: S.androidSpeakerVolume }).catch(error => {
+          console.debug("Android speaker volume sync failed", error);
+        });
         if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
         S.reconnectTimer = null;
         if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
@@ -985,6 +1001,9 @@ async function connect(automatic = false) {
     $("connect").disabled = true;
     $("disconnect").disabled = false;
     $("ptt").disabled = false;
+    $("pttLock").disabled = false;
+    $("remoteMute").disabled = false;
+    $("androidSpeakerVolume").disabled = false;
     $("streamState").textContent = "Android応答待ち";
     status("接続要求中");
     pollAnswers();
@@ -1121,6 +1140,8 @@ async function disconnect(sendCommand = true, preserveMic = false) {
     }
   }
   S.pttActive = false;
+  if (S.pttSafetyTimer) clearTimeout(S.pttSafetyTimer);
+  S.pttSafetyTimer = null;
   S.remoteAudioTracks = [];
   $("remoteVideo").srcObject = null;
   $("remoteVideo").muted = true;
@@ -1134,6 +1155,7 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   $("ptt").disabled = true;
   $("pttLock").disabled = true;
   $("remoteMute").disabled = true;
+  $("androidSpeakerVolume").disabled = true;
   S.pttLocked = false;
   S.remoteAudioMuted = false;
   $("pttLock").textContent = "送話ロック OFF";
@@ -1151,13 +1173,33 @@ async function disconnect(sendCommand = true, preserveMic = false) {
 }
 function ptt(enabled) {
   const track = S.mic && S.mic.getAudioTracks()[0];
-  if (!track) return;
+  if (!track) {
+    if (S.pttSafetyTimer) clearTimeout(S.pttSafetyTimer);
+    S.pttSafetyTimer = null;
+    S.pttActive = false;
+    if ($("ptt")) {
+      $("ptt").classList.remove("active");
+      $("ptt").textContent = "🎙 押している間だけ話す";
+    }
+    return;
+  }
+  if (S.pttSafetyTimer) clearTimeout(S.pttSafetyTimer);
+  S.pttSafetyTimer = null;
   S.pttActive = enabled;
   track.enabled = enabled;
   // Half-duplex: mute the Android return audio while sending PTT audio.
   S.remoteAudioTracks.forEach(remoteTrack => { remoteTrack.enabled = !enabled && !S.remoteAudioMuted; });
   $("ptt").classList.toggle("active", enabled);
   $("ptt").textContent = enabled ? "🎙 送話中…" : "🎙 押している間だけ話す";
+  if (enabled) {
+    // Safety release prevents a stuck pointer or forgotten PTT lock from transmitting indefinitely.
+    S.pttSafetyTimer = setTimeout(() => {
+      S.pttLocked = false;
+      $("pttLock").textContent = "送話ロック OFF";
+      ptt(false);
+      toast("安全のため送話を自動停止しました（3分）。");
+    }, 180000);
+  }
 }
 async function loadSettings() {
   if (!S.device) return;
@@ -1426,11 +1468,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("disconnect").addEventListener("click", () => disconnect(true));
   $("ptt").addEventListener("pointerdown", event => {
     event.preventDefault();
+    try { if (event.pointerId !== undefined) $("ptt").setPointerCapture(event.pointerId); } catch (_) {}
     if (S.pttLocked) { S.pttLocked = false; $("pttLock").textContent = "送話ロック OFF"; ptt(false); return; }
     ptt(true);
   });
-  ["pointerup", "pointerleave", "pointercancel", "lostpointercapture"].forEach(name => {
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach(name => {
     $("ptt").addEventListener(name, () => { if (!S.pttLocked) ptt(false); });
+  });
+  $("ptt").addEventListener("keydown", event => {
+    if (event.code === "Space" || event.key === "Enter") {
+      event.preventDefault();
+      if (!S.pttLocked) ptt(true);
+    }
+  });
+  $("ptt").addEventListener("keyup", event => {
+    if ((event.code === "Space" || event.key === "Enter") && !S.pttLocked) {
+      event.preventDefault();
+      ptt(false);
+    }
   });
   $("pttLock").addEventListener("click", () => {
     if (!S.mic || !S.mic.getAudioTracks()[0]) return;
@@ -1476,6 +1531,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   const savedVolume = storedVolume === null ? 70 : Number(storedVolume);
   setReceiveVolume(Number.isFinite(savedVolume) ? savedVolume : 70, false);
   $("volume").addEventListener("input", event => setReceiveVolume(Number(event.target.value), true));
+  const storedAndroidSpeakerVolume = localStorage.getItem("rc_android_speaker_volume_v1");
+  const savedAndroidSpeakerVolume = storedAndroidSpeakerVolume === null ? 70 : Number(storedAndroidSpeakerVolume);
+  S.androidSpeakerVolume = Number.isFinite(savedAndroidSpeakerVolume)
+    ? Math.max(0, Math.min(100, savedAndroidSpeakerVolume)) : 70;
+  $("androidSpeakerVolume").value = String(S.androidSpeakerVolume);
+  $("androidSpeakerVolumeValue").textContent = S.androidSpeakerVolume + "%";
+  $("androidSpeakerVolume").addEventListener("input", event => {
+    S.androidSpeakerVolume = Math.max(0, Math.min(100, Number(event.target.value) || 0));
+    $("androidSpeakerVolumeValue").textContent = S.androidSpeakerVolume + "%";
+    try { localStorage.setItem("rc_android_speaker_volume_v1", String(S.androidSpeakerVolume)); } catch (_) {}
+  });
+  $("androidSpeakerVolume").addEventListener("change", () => {
+    if (!S.pc) return toast("Androidスピーカー音量は接続後に反映できます。");
+    sendControlCommand("volume", { percent: S.androidSpeakerVolume })
+      .then(() => toast("Android側の送話再生音量を変更しました。"))
+      .catch(error => toast("Android音量変更失敗：" + error.message));
+  });
   $("camera").addEventListener("change", event => {
     command("camera", { facing: event.target.value }).catch(error => toast(error.message));
   });

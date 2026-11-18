@@ -30,6 +30,7 @@ class RtcEngine(
     private val api: ApiClient,
     private val deviceId: String,
     private val secret: String,
+    private val audioPickupMode: String,
     private val scope: CoroutineScope,
     private val onState: (String) -> Unit,
     private val onControlCommand: (JSONObject) -> Unit = {}
@@ -130,7 +131,25 @@ class RtcEngine(
             previousAudioMode = manager.mode
             audioModeChanged = true
         }
-        manager.mode = AudioManager.MODE_NORMAL
+        // Ambient/balanced modes keep Android in its normal recording route.
+        // Only the voice-focused preset switches to the communication route.
+        manager.mode = if (audioPickupMode == "voice") {
+            AudioManager.MODE_IN_COMMUNICATION
+        } else {
+            AudioManager.MODE_NORMAL
+        }
+    }
+
+    private fun audioConstraintsForPickupMode(): MediaConstraints {
+        val echoCancellation = audioPickupMode == "voice"
+        val noiseSuppression = audioPickupMode != "ambient"
+        return MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", echoCancellation.toString()))
+            mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", noiseSuppression.toString()))
+            // Keep gain control enabled so quiet ambient sounds remain audible.
+            mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", (audioPickupMode != "ambient").toString()))
+        }
     }
 
     private fun restoreAudioMode() {
@@ -284,10 +303,13 @@ class RtcEngine(
             )
             egl = EglBase.create()
             audioDeviceModule = JavaAudioDeviceModule.builder(context.applicationContext)
-                .setAudioSource(MediaRecorder.AudioSource.MIC)
-                // Ambient pickup preset: do not use voice-call DSP that can suppress quiet surroundings.
-                .setUseHardwareAcousticEchoCanceler(false)
-                .setUseHardwareNoiseSuppressor(false)
+                .setAudioSource(
+                    if (audioPickupMode == "voice") MediaRecorder.AudioSource.VOICE_COMMUNICATION
+                    else MediaRecorder.AudioSource.MIC
+                )
+                // Ambient mode deliberately disables processing that can remove quiet room sounds.
+                .setUseHardwareAcousticEchoCanceler(audioPickupMode == "voice")
+                .setUseHardwareNoiseSuppressor(audioPickupMode != "ambient")
                 .createAudioDeviceModule()
             factory = PeerConnectionFactory.builder()
                 .setAudioDeviceModule(audioDeviceModule!!)
@@ -332,7 +354,7 @@ class RtcEngine(
         deferredFormatMessageFor = null
         enterCommunicationAudioMode()
         videoTrack = factory!!.createVideoTrack("remote-camera-video", videoSource).apply { setEnabled(true) }
-        audioSource = factory!!.createAudioSource(MediaConstraints())
+        audioSource = factory!!.createAudioSource(audioConstraintsForPickupMode())
         audioTrack = factory!!.createAudioTrack("remote-camera-audio", audioSource).apply { setEnabled(true) }
         Log.i("RemoteCameraRTC", "Android microphone audio track created and enabled")
         onState("カメラ・マイクを起動しました")
