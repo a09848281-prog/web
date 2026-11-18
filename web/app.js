@@ -30,6 +30,16 @@ const S = {
   previousStats: null,
   statsFreezeCount: 0,
   hasReceivedVideoFrame: false,
+  videoWatchdogTimer: null,
+  videoFrameCallbackId: null,
+  videoUsesFrameCallback: false,
+  lastVideoFrameAt: 0,
+  audioContext: null,
+  remoteGain: null,
+  remoteAudioSource: null,
+  remoteVideoStream: null,
+  receiveVolume: 70,
+  controlChannel: null,
   sessionTimer: null,
   connectedAt: 0
 };
@@ -80,7 +90,7 @@ async function loadConfig() {
  * GAS HTML response is returned through a hidden iframe.
  * Match both the request ID and the exact iframe window before accepting it.
  */
-function api(action, data = {}) {
+function apiOnce(action, data = {}) {
   return new Promise((resolve, reject) => {
     const id = rid();
     const frame = document.createElement("iframe");
@@ -104,9 +114,11 @@ function api(action, data = {}) {
     document.body.append(frame, form);
 
     let finished = false;
-    const timer = setTimeout(() => finish(
-      Error("GASから30秒以内に応答が届きませんでした。GASの再デプロイ状態と通信設定を確認してください。")
-    ), Number(S.cfg.requestTimeoutMs) || 30000);
+    const timer = setTimeout(() => {
+      const error = Error("GAS応答がタイムアウトしました。安全な読み取り操作を自動再試行します。");
+      error.transient = true;
+      finish(error);
+    }, Number(S.cfg.requestTimeoutMs) || 12000);
 
     function finish(error, value) {
       if (finished) return;
@@ -143,6 +155,20 @@ function api(action, data = {}) {
       finish(error);
     }
   });
+}
+
+async function api(action, data = {}) {
+  const safeRead = ["health", "poll_signals", "get_settings", "get_locations"].includes(action);
+  const maxAttempts = safeRead ? 2 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await apiOnce(action, data);
+    } catch (error) {
+      if (!error.transient || attempt + 1 >= maxAttempts) throw error;
+      await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
+    }
+  }
+  throw Error("GAS通信に失敗しました。");
 }
 
 function renderDevices() {
@@ -340,7 +366,7 @@ async function collectConnectionStats(pc) {
     } else {
       S.statsFreezeCount = 0;
     }
-    if (S.statsFreezeCount >= 3 && pc.connectionState === "connected") {
+    if (!S.videoUsesFrameCallback && S.statsFreezeCount >= 3 && pc.connectionState === "connected") {
       toast("映像フレームが止まっています。接続を再構築します。");
       scheduleReconnect(pc, true);
       return;
@@ -368,7 +394,7 @@ function startStatsMonitor(pc) {
   S.statsTimer = setInterval(() => collectConnectionStats(pc), 2500);
 }
 
-function scheduleReconnect(failedPeer, forceReconnect = false) {
+function scheduleReconnect(failedPeer, forceReconnect = false, initialWait = null) {
   if (S.manualDisconnect || !S.device || S.reconnectTimer) return;
   const waits = [2500, 5000, 10000, 15000, 20000];
   if (S.reconnectAttempts >= waits.length) {
@@ -376,7 +402,7 @@ function scheduleReconnect(failedPeer, forceReconnect = false) {
     return;
   }
   const attempt = S.reconnectAttempts + 1;
-  const wait = waits[S.reconnectAttempts];
+  const wait = initialWait === null ? waits[S.reconnectAttempts] : initialWait;
   status("再接続を準備中", false);
   $("streamState").textContent = "再接続 " + attempt + "/" + waits.length;
   S.reconnectTimer = setTimeout(async () => {
@@ -430,6 +456,111 @@ async function copyCoordinates() {
     input.remove();
     toast(copied ? "座標をコピーしました: " + text : "座標をコピーできませんでした。");
   }
+}
+
+function prepareAudioOutput() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return false;
+  try {
+    if (!S.audioContext) {
+      S.audioContext = new AudioContextClass();
+      S.remoteGain = S.audioContext.createGain();
+      S.remoteGain.gain.value = S.receiveVolume / 100;
+      S.remoteGain.connect(S.audioContext.destination);
+    }
+    if (S.audioContext.state === "suspended") {
+      S.audioContext.resume().catch(error => console.debug("AudioContext resume failed", error));
+    }
+    return true;
+  } catch (error) {
+    console.warn("Web Audio output setup failed", error);
+    return false;
+  }
+}
+
+function attachRemoteAudio() {
+  if (!S.remoteAudioTracks.length) return;
+  if (!prepareAudioOutput()) {
+    $("remoteVideo").muted = false;
+    setReceiveVolume(S.receiveVolume, false);
+    return;
+  }
+  try {
+    if (S.remoteAudioSource) S.remoteAudioSource.disconnect();
+    const liveTracks = S.remoteAudioTracks.filter(track => track.readyState === "live");
+    if (!liveTracks.length) return;
+    const audioStream = new MediaStream(liveTracks);
+    S.remoteAudioSource = S.audioContext.createMediaStreamSource(audioStream);
+    S.remoteAudioSource.connect(S.remoteGain);
+    $("remoteVideo").muted = true;
+  } catch (error) {
+    console.warn("Remote audio routing failed; falling back to media element", error);
+    $("remoteVideo").muted = false;
+  }
+}
+
+function setReceiveVolume(value, persist = true) {
+  S.receiveVolume = Math.max(0, Math.min(100, Number(value) || 0));
+  $("volume").value = String(S.receiveVolume);
+  $("volumeValue").textContent = S.receiveVolume + "%";
+  if (S.remoteGain && S.audioContext) {
+    S.remoteGain.gain.setTargetAtTime(S.receiveVolume / 100, S.audioContext.currentTime, 0.035);
+  } else if ($("remoteVideo")) {
+    try { $("remoteVideo").volume = S.receiveVolume / 100; } catch (_) {}
+  }
+  if (persist) {
+    try { localStorage.setItem("rc_receive_volume_v1", String(S.receiveVolume)); } catch (_) {}
+  }
+}
+
+function stopVideoWatchdog() {
+  if (S.videoWatchdogTimer) clearInterval(S.videoWatchdogTimer);
+  S.videoWatchdogTimer = null;
+  if (S.videoFrameCallbackId !== null && $("remoteVideo").cancelVideoFrameCallback) {
+    try { $("remoteVideo").cancelVideoFrameCallback(S.videoFrameCallbackId); } catch (_) {}
+  }
+  S.videoFrameCallbackId = null;
+  S.videoUsesFrameCallback = false;
+  S.lastVideoFrameAt = 0;
+  S.hasReceivedVideoFrame = false;
+}
+
+function startVideoWatchdog(pc) {
+  stopVideoWatchdog();
+  $("videoState").textContent = "映像の初回フレーム待ち";
+  S.hasReceivedVideoFrame = false;
+  S.lastVideoFrameAt = 0;
+  const video = $("remoteVideo");
+  const onFrame = () => {
+    if (S.pc !== pc) return;
+    S.hasReceivedVideoFrame = true;
+    S.lastVideoFrameAt = Date.now();
+    $("videoState").textContent = "映像受信中";
+    if (typeof video.requestVideoFrameCallback === "function") {
+      S.videoUsesFrameCallback = true;
+      S.videoFrameCallbackId = video.requestVideoFrameCallback(onFrame);
+    }
+  };
+  if (typeof video.requestVideoFrameCallback === "function") {
+    S.videoUsesFrameCallback = true;
+    S.videoFrameCallbackId = video.requestVideoFrameCallback(onFrame);
+  }
+  S.videoWatchdogTimer = setInterval(() => {
+    if (S.pc !== pc || pc.connectionState !== "connected") return;
+    const now = Date.now();
+    if (!S.hasReceivedVideoFrame) {
+      const connectedFor = S.connectedAt ? now - S.connectedAt : 0;
+      if (connectedFor > 15000) {
+        $("videoState").textContent = "映像未着信・再接続中";
+        toast("通信は接続中ですが映像が届きません。映像接続を再構築します。");
+        scheduleReconnect(pc, true, 1200);
+      }
+    } else if (now - S.lastVideoFrameAt > 8000) {
+      $("videoState").textContent = "映像フリーズ・再接続中";
+      toast("映像フレームが8秒以上停止しました。接続を再構築します。");
+      scheduleReconnect(pc, true, 1200);
+    }
+  }, 2000);
 }
 
 async function connect(automatic = false) {
@@ -486,28 +617,49 @@ async function connect(automatic = false) {
     });
     S.pc = pc;
     $("camera").disabled = false;
-    const remote = new MediaStream();
-    $("remoteVideo").srcObject = remote;
+    S.remoteVideoStream = new MediaStream();
+    $("remoteVideo").muted = true;
+    $("remoteVideo").srcObject = S.remoteVideoStream;
+    prepareAudioOutput();
+    const controlChannel = pc.createDataChannel("remote-control", { ordered: true });
+    S.controlChannel = controlChannel;
+    controlChannel.onopen = () => {
+      $("streamState").textContent = "操作用データチャネル接続済み";
+    };
+    controlChannel.onclose = () => {
+      if (S.controlChannel === controlChannel) S.controlChannel = null;
+    };
     pc.addTransceiver("video", { direction: "recvonly" });
     pc.addTrack(localAudioTrack, stream);
     pc.ontrack = event => {
-      const tracks = event.streams[0] ? event.streams[0].getTracks() : [event.track];
-      tracks.forEach(track => {
-        if (!remote.getTracks().some(existing => existing.id === track.id)) remote.addTrack(track);
-        if (track.kind === "audio" && !S.remoteAudioTracks.some(existing => existing.id === track.id)) {
+      const track = event.track;
+      if (track.kind === "video") {
+        if (!S.remoteVideoStream.getTracks().some(existing => existing.id === track.id)) {
+          S.remoteVideoStream.addTrack(track);
+        }
+        track.onmute = () => { $("videoState").textContent = "映像一時停止"; };
+        track.onunmute = () => { $("videoState").textContent = "映像再開中"; };
+        track.onended = () => {
+          $("videoState").textContent = "映像トラック終了";
+          scheduleReconnect(pc, true, 1200);
+        };
+        $("placeholder").classList.add("hidden");
+        startVideoWatchdog(pc);
+        $("remoteVideo").play().catch(() => toast("映像を再生するには画面をタップしてください。"));
+      } else if (track.kind === "audio") {
+        if (!S.remoteAudioTracks.some(existing => existing.id === track.id)) {
           track.enabled = !S.pttActive;
           S.remoteAudioTracks.push(track);
         }
-      });
-      $("placeholder").classList.add("hidden");
-      $("remoteVideo").play().catch(() => toast("映像・音声を再生するには画面をタップしてください。"));
+        attachRemoteAudio();
+      }
     };
     pc.onconnectionstatechange = () => {
       if (S.pc !== pc) return;
       const state = pc.connectionState;
       $("iceState").textContent = "ICE: " + state;
-      status(state === "connected" ? "監視中" : state, state === "connected");
-      $("streamState").textContent = state === "connected" ? "映像・音声接続中" : "接続処理中";
+      status(state === "connected" ? "通信接続済み" : state, state === "connected");
+      $("streamState").textContent = state === "connected" ? "通信チャネル接続中" : "接続処理中";
       if (state === "connected") {
         if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
         S.reconnectTimer = null;
@@ -521,11 +673,13 @@ async function connect(automatic = false) {
         }, 30000);
         startSessionClock();
         startStatsMonitor(pc);
+        startVideoWatchdog(pc);
       } else if (state === "failed" || state === "disconnected" || state === "closed") {
+        if (state === "disconnected") $("streamState").textContent = "通信が不安定です・復帰確認中";
         if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
         S.reconnectResetTimer = null;
         if (S.connectedAt) stopSessionClock();
-        scheduleReconnect(pc);
+        scheduleReconnect(pc, false, state === "disconnected" ? 8000 : 1500);
       }
     };
     const offer = await pc.createOffer();
@@ -576,6 +730,8 @@ async function pollAnswers() {
         S.seq = Math.max(S.seq, Number(signal.seq) || 0);
         if (signal.kind === "answer" && !S.pc.remoteDescription) {
           await S.pc.setRemoteDescription({ type: "answer", sdp: signal.sdp });
+          // Non-trickle ICE: no further GAS signal polling is needed after the complete answer.
+          return;
         } else if (signal.kind === "error") {
           toast(signal.sdp || "Android側で接続エラーが発生しました。");
         }
@@ -597,6 +753,7 @@ async function disconnect(sendCommand = true, preserveMic = false) {
     S.reconnectTimer = null;
   }
   stopStatsMonitor();
+  stopVideoWatchdog();
   stopSessionClock();
   if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
   S.reconnectResetTimer = null;
@@ -620,6 +777,16 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   S.pc = null;
   S.session = "";
   try { if (old) old.close(); } catch (_) {}
+  if (S.controlChannel) {
+    try { S.controlChannel.close(); } catch (_) {}
+    S.controlChannel = null;
+  }
+  if (S.remoteAudioSource) {
+    try { S.remoteAudioSource.disconnect(); } catch (_) {}
+    S.remoteAudioSource = null;
+  }
+  S.remoteAudioTracks = [];
+  S.remoteVideoStream = null;
   if (S.mic) {
     if (preserveMic) {
       S.mic.getAudioTracks().forEach(track => { track.enabled = false; });
@@ -631,6 +798,8 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   S.pttActive = false;
   S.remoteAudioTracks = [];
   $("remoteVideo").srcObject = null;
+  $("remoteVideo").muted = true;
+  $("videoState").textContent = "映像待機中";
   $("placeholder").classList.remove("hidden");
   $("connect").disabled = !S.device;
   $("disconnect").disabled = true;
@@ -685,23 +854,34 @@ async function saveSettings() {
     deviceId: S.device.deviceId,
     settings
   });
-  await api("send_command", {
-    controllerToken: S.device.controllerToken,
-    deviceId: S.device.deviceId,
-    command: "quality",
-    payload: { quality: settings.quality, dataMode: settings.dataMode }
-  });
+  await sendControlCommand("quality", { quality: settings.quality, dataMode: settings.dataMode });
   toast("設定を保存しました。");
 }
-async function command(name, payload = {}) {
-  if (!S.device) return toast("Android端末をペアリングしてください。");
-  await api("send_command", {
+async function sendControlCommand(name, payload = {}) {
+  if (S.controlChannel && S.controlChannel.readyState === "open") {
+    S.controlChannel.send(JSON.stringify({
+      type: "command",
+      name,
+      payload,
+      sentAt: Date.now()
+    }));
+    return { delivered: "webrtc" };
+  }
+  if (!S.device) throw Error("Android端末をペアリングしてください。");
+  return api("send_command", {
     controllerToken: S.device.controllerToken,
     deviceId: S.device.deviceId,
     command: name,
     payload
   });
-  toast("Androidへ命令しました。");
+}
+
+async function command(name, payload = {}) {
+  if (!S.device) return toast("Android端末をペアリングしてください。");
+  await sendControlCommand(name, payload);
+  toast(S.controlChannel && S.controlChannel.readyState === "open"
+    ? "WebRTCでAndroidへ直接命令しました。"
+    : "GAS経由でAndroidへ命令しました。");
 }
 
 async function unpairSelectedDevice() {
@@ -874,10 +1054,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
   $("copyLocation").addEventListener("click", copyCoordinates);
-  $("volume").addEventListener("input", event => { $("volumeValue").value = event.target.value + "%"; });
-  $("volume").addEventListener("change", event => {
-    command("volume", { percent: Number(event.target.value) }).catch(error => toast(error.message));
-  });
+  const savedVolume = Number(localStorage.getItem("rc_receive_volume_v1"));
+  setReceiveVolume(Number.isFinite(savedVolume) ? savedVolume : 70, false);
+  $("volume").addEventListener("input", event => setReceiveVolume(Number(event.target.value), true));
   $("camera").addEventListener("change", event => {
     command("camera", { facing: event.target.value }).catch(error => toast(error.message));
   });
