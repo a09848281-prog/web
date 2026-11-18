@@ -28,8 +28,11 @@ class MonitorService : Service() {
         const val ACTION_START = "jp.a09848281.remotecamera.START"
         const val ACTION_REFRESH_CODE = "jp.a09848281.remotecamera.REFRESH_CODE"
         const val ACTION_STOP = "jp.a09848281.remotecamera.STOP"
+        const val ACTION_UPDATE_LOCAL_SETTINGS = "jp.a09848281.remotecamera.UPDATE_LOCAL_SETTINGS"
         const val ACTION_CODE = "jp.a09848281.remotecamera.CODE"
         const val EXTRA_GAS_URL = "gas_url"
+        const val EXTRA_WAIT_MODE = "wait_mode"
+        const val EXTRA_REMOTE_CAPTURE_ENABLED = "remote_capture_enabled"
         const val EXTRA_CODE = "registration_code"
         const val EXTRA_DEVICE_ID = "device_id"
         private const val CHANNEL = "remote_camera_monitor"
@@ -64,16 +67,54 @@ class MonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val startIntent = intent
         if (startIntent == null) {
-            stopSelf()
-            return START_NOT_STICKY
+            val shouldRestore = prefs.getBoolean("monitoringEnabled", false)
+            gasUrl = prefs.getString("gasUrl", "") ?: ""
+            val cameraGranted = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            val micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            if (!shouldRestore || !gasUrl.startsWith("https://script.google.com/") || !cameraGranted || !micGranted) {
+                prefs.edit().putBoolean("monitoringEnabled", false).apply()
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            return try {
+                startMonitoringForeground()
+                if (pollJob?.isActive != true) pollJob = scope.launch { pollLoop() }
+                if (locationJob?.isActive != true) locationJob = scope.launch { locationLoop() }
+                START_STICKY
+            } catch (e: Exception) {
+                Log.e("RemoteCameraService", "Foreground service recovery failed", e)
+                prefs.edit().putBoolean("monitoringEnabled", false).apply()
+                stopSelf(startId)
+                START_NOT_STICKY
+            }
         }
         val action = startIntent.action
         if (action == ACTION_STOP) {
             stopMonitoringNow(startId)
             return START_NOT_STICKY
         }
+        if (action == ACTION_UPDATE_LOCAL_SETTINGS) {
+            if (pollJob?.isActive != true) {
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            val mode = startIntent.getStringExtra(EXTRA_WAIT_MODE) ?: "standard"
+            val remoteEnabled = startIntent.getBooleanExtra(EXTRA_REMOTE_CAPTURE_ENABLED, true)
+            prefs.edit()
+                .putString("waitMode", if (mode in listOf("eco", "standard", "fast")) mode else "standard")
+                .putBoolean("remoteCaptureEnabled", remoteEnabled)
+                .apply()
+            if (!remoteEnabled) {
+                rtc?.dispose()
+                rtc = null
+                notifyState("遠隔カメラ・マイクはスマホ設定でOFFです。待機通信は継続しています")
+            } else {
+                notifyState("遠隔カメラ・マイクの起動を許可しました。待機中は撮影・録音していません")
+            }
+            return START_STICKY
+        }
         if (action != ACTION_START && action != ACTION_REFRESH_CODE) {
-            stopSelf()
+            stopSelf(startId)
             return START_NOT_STICKY
         }
         gasUrl = startIntent.getStringExtra(EXTRA_GAS_URL)
@@ -99,13 +140,13 @@ class MonitorService : Service() {
                 }
             }
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     private fun startMonitoringForeground() {
         createChannel()
         prefs.edit().putBoolean("monitoringEnabled", true).apply()
-        val notification = notification("監視待機中（接続要求を確認しています）")
+        val notification = notification("待機中：撮影・録音なし／Web要求を確認しています")
         if (Build.VERSION.SDK_INT >= 29) {
             val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
@@ -216,13 +257,25 @@ class MonitorService : Service() {
                                             notifyState("接続できません：カメラ・マイクの権限を確認してください")
                                             continue
                                         }
+                                        if (!prefs.getBoolean("remoteCaptureEnabled", true)) {
+                                            notifyState("接続要求を拒否しました：スマホ側で遠隔カメラ・マイクがOFFです")
+                                            try {
+                                                currentApi.call("send_signal", JSONObject()
+                                                    .put("deviceId", deviceId).put("deviceSecret", secret)
+                                                    .put("sessionId", session).put("recipient", "viewer")
+                                                    .put("kind", "error").put("sdp", "スマホ側で遠隔カメラ・マイクが無効です"))
+                                            } catch (e: Exception) {
+                                                Log.w("RemoteCameraService", "Could not report disabled remote media", e)
+                                            }
+                                            continue
+                                        }
                                         if (rtc == null) {
                                             val currentApi = api ?: continue
                                             rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState)
                                         }
                                         rtc?.handleOffer(session, signal.optString("sdp"))
                                         rtc?.setQuality(currentQuality, currentDataMode)
-                                        notifyState("接続要求を処理しています")
+                                        notifyState("Web接続中：カメラ・マイクを使用しています")
                                     } catch (e: Exception) {
                                         Log.e("RemoteCameraService", "Offer handling failed; keep foreground service alive", e)
                                         notifyState("接続開始に失敗しました：" + (e.message ?: "詳細不明") + "。待機は継続します")
@@ -245,7 +298,12 @@ class MonitorService : Service() {
                     Log.e("RemoteCameraService", "Polling iteration failed; foreground service remains active", e)
                     notifyState("通信または接続処理に失敗しました。待機を継続して再試行します")
                 }
-                delay(AppConfig.POLL_SECONDS * 1000L)
+                val waitSeconds = when (prefs.getString("waitMode", "standard")) {
+                    "eco" -> 60L
+                    "fast" -> 5L
+                    else -> 15L
+                }
+                delay(waitSeconds * 1000L)
             }
         } catch (e: Exception) {
             if (!apiReady.isCompleted) apiReady.completeExceptionally(e)
