@@ -20,7 +20,7 @@
 6. 正式版URL： https://a09848281-prog.github.io/web/
 
 ## 3. Androidの準備
-1. [最新成功ビルド #124](https://github.com/a09848281-prog/web/actions/runs/44303726454) のArtifact `remote-camera-debug-apk-v3.8` を取得してインストールします。表示名は「Remote Camera 3.8 Preview」、applicationIdは `jp.a09848281.remotecamera.v38preview` です。v3.7とは別アプリなので、**v3.7をアンインストールせず**並行インストールできます。
+1. [最新成功ビルド #126](https://github.com/a09848281-prog/web/actions/runs/44305341304) のArtifact `remote-camera-debug-apk-v3.8` を取得してインストールします。表示名は「Remote Camera 3.8 Preview」、applicationIdは `jp.a09848281.remotecamera.v38preview` です。v3.7とは別アプリなので、**v3.7をアンインストールせず**並行インストールできます。
 2. Android 13端末でアプリを開きます。
 3. カメラ・マイク・通知を許可します。位置情報は任意ですが、利用する場合は「正確な位置情報」を許可し、Android本体の位置情報もONにします。待機開始後に位置情報権限を追加で許可した場合は、一度待機を停止してから再開始してください。
 4. 「監視待機を開始」を押します。
