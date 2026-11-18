@@ -387,6 +387,11 @@ class RtcEngine(
                 val oldSession = entry.key
                 val oldPeer = entry.value
                 if (oldSession != sessionId && peers.remove(oldSession, oldPeer)) {
+                    disconnectTimers.remove(oldSession)?.cancel()
+                    dataChannels.remove(oldSession)?.let {
+                        try { it.close() } catch (_: Exception) {}
+                    }
+                    iceStates.remove(oldSession)
                     videoSenders.remove(oldSession)
                     try { oldPeer.close() } catch (e: Exception) {
                         Log.w("RemoteCameraRTC", "Could not close stale peer " + oldSession, e)
@@ -450,9 +455,11 @@ class RtcEngine(
 
     fun hasPeers(): Boolean = peers.isNotEmpty()
 
-    fun hasConnectedPeer(): Boolean = iceStates.values.any {
-        it == PeerConnection.IceConnectionState.CONNECTED ||
-            it == PeerConnection.IceConnectionState.COMPLETED
+    fun hasConnectedPeer(): Boolean = iceStates.entries.any { entry ->
+        val connected = entry.value == PeerConnection.IceConnectionState.CONNECTED ||
+            entry.value == PeerConnection.IceConnectionState.COMPLETED
+        val channelOpen = dataChannels[entry.key]?.state() == DataChannel.State.OPEN
+        connected && channelOpen
     }
 
     fun switchCamera(facing: String) {
