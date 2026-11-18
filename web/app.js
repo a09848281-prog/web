@@ -22,6 +22,7 @@ const S = {
   zoom: 1,
   fitMode: "contain",
   reconnectTimer: null,
+  reconnectResetTimer: null,
   reconnectAttempts: 0,
   manualDisconnect: false,
   statsTimer: null,
@@ -462,12 +463,21 @@ async function connect(automatic = false) {
       status(state === "connected" ? "監視中" : state, state === "connected");
       $("streamState").textContent = state === "connected" ? "映像・音声接続中" : "接続処理中";
       if (state === "connected") {
-        S.reconnectAttempts = 0;
         if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
         S.reconnectTimer = null;
+        if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
+        // Reset the retry budget only after a genuinely stable connection.
+        S.reconnectResetTimer = setTimeout(() => {
+          if (S.pc === pc && pc.connectionState === "connected") {
+            S.reconnectAttempts = 0;
+          }
+          S.reconnectResetTimer = null;
+        }, 30000);
         startSessionClock();
         startStatsMonitor(pc);
       } else if (state === "failed" || state === "disconnected") {
+        if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
+        S.reconnectResetTimer = null;
         if (S.connectedAt) stopSessionClock();
         scheduleReconnect(pc);
       }
@@ -530,6 +540,8 @@ async function disconnect(sendCommand = true) {
   }
   stopStatsMonitor();
   stopSessionClock();
+  if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
+  S.reconnectResetTimer = null;
   if (sendCommand && S.pc && S.device) {
     const signal = {
       controllerToken: S.device.controllerToken,
