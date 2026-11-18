@@ -260,7 +260,7 @@ class MonitorService : Service() {
                                         if (!prefs.getBoolean("remoteCaptureEnabled", true)) {
                                             notifyState("接続要求を拒否しました：スマホ側で遠隔カメラ・マイクがOFFです")
                                             try {
-                                                currentApi.call("send_signal", JSONObject()
+                                                api?.call("send_signal", JSONObject()
                                                     .put("deviceId", deviceId).put("deviceSecret", secret)
                                                     .put("sessionId", session).put("recipient", "viewer")
                                                     .put("kind", "error").put("sdp", "スマホ側で遠隔カメラ・マイクが無効です"))
