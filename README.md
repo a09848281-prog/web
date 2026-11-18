@@ -28,6 +28,7 @@ Firebase：不使用
 - [v4.1クイックスタート](docs/QUICKSTART-v4.1.0.md)
 - [GAS v4.1.0再デプロイ](docs/GAS-REDEPLOY-v4.1.0.md)
 - [v4.1実機テストチェックリスト](docs/TEST-PLAN-v4.1.0.md)
+- [v4.1 CIビルド検証結果・APKハッシュ](docs/BUILD-REPORT-v4.1.0.md)
 
 ---
 
