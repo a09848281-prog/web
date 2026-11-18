@@ -6,6 +6,7 @@ https://a09848281-prog.github.io/web/preview/ （正式版トップページと�
 ## v3.8.0 リアルタイム安定性改善ブランチ
 作業ブランチ：`rebuild-v3.8-realtime-stability-no-firebase`
 検証対象：Android 13 / iPad Safari / Firebase非使用
+Android applicationId：`jp.a09848281.remotecamera.v38preview`（v3.7と並行インストール）
 
 ### v3.8で追加・改善
 - WebRTCのデータチャネルを追加し、接続中のカメラ切替・画質変更・位置情報設定・切断命令をGAS経由ではなく端末間で直接送信します。
@@ -20,6 +21,7 @@ https://a09848281-prog.github.io/web/preview/ （正式版トップページと�
 - GAS APIの応答にサーバー処理時間（serverMs）とAPIバージョンを含め、GAS内部処理の遅延とネットワーク遅延を切り分けられるようにします。
 - Androidの待機モードを「省電力30秒／標準6秒／応答優先2秒」に統一します。
 - Firebase依存関係は追加していません。
+- v3.8 Previewはv3.7とAndroid署名が異なっても共存できるよう、別applicationIdで配布します。既存v3.7をアンインストールせず、新しい8桁コードで別途ペアリングしてください。
 
 **GAS 6分制限について：** Apps Scriptの1回の実行上限は6分のままです。制限そのものを無効化することはできません。v3.8では接続成立後にGASの定期ポーリングを止めてWebRTCへ切り替えることで、不要な実行回数を減らします。
 
