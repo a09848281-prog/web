@@ -25,7 +25,7 @@ Android applicationId：`jp.a09848281.remotecamera.v38preview`（v3.7と並行�
 
 **GAS 6分制限について：** Apps Scriptの1回の実行上限は6分のままです。制限そのものを無効化することはできません。v3.8では接続成立後にGASの定期ポーリングを止めてWebRTCへ切り替えることで、不要な実行回数を減らします。
 
-**公開状態：** v3.8は検証ブランチにあり、mainにはまだ統合していません。GitHub Pagesの公開画面もmainからのみ配信されます。APKとGASのビルド・デプロイ検査が通ったあと、Galaxy A22 5G / Android 13とiPad Safariで実機確認が必要です。
+**公開状態：** v3.8のAndroid/GASソースは検証ブランチにあり、mainにはまだ統合していません。Webプレビューだけは `https://a09848281-prog.github.io/web/preview/` に公開済みで、正式版トップページ `/web/` は維持しています。Galaxy A22 5G / Android 13とiPad Safariで実機確認が必要です。
 
 - WebRTC初期化前に `ACCESS_NETWORK_STATE` を検査し、欠落時はネイティブ処理へ進まず原因を通知します。
 - 背面カメラの公開情報から水平画角が最も広いカメラを優先し、16:9の720p/24fpsを標準にします。
