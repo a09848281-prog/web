@@ -762,20 +762,37 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
   S.reconnectResetTimer = null;
   if (sendCommand && S.pc && S.device) {
-    const signal = {
-      controllerToken: S.device.controllerToken,
-      deviceId: S.device.deviceId,
-      sessionId: S.session,
-      recipient: "device",
-      kind: "bye"
-    };
-    api("send_signal", signal).catch(() => {});
-    api("send_command", {
-      controllerToken: S.device.controllerToken,
-      deviceId: S.device.deviceId,
-      command: "disconnect",
-      payload: {}
-    }).catch(() => {});
+    // Prefer peer-to-peer control; only use GAS when the data channel is not open.
+    if (S.controlChannel && S.controlChannel.readyState === "open") {
+      try {
+        S.controlChannel.send(JSON.stringify({
+          type: "command", name: "disconnect", payload: {}, sentAt: Date.now()
+        }));
+      } catch (error) {
+        console.warn("Data-channel disconnect failed; using GAS fallback", error);
+        api("send_command", {
+          controllerToken: S.device.controllerToken,
+          deviceId: S.device.deviceId,
+          command: "disconnect",
+          payload: {}
+        }).catch(() => {});
+      }
+    } else {
+      const signal = {
+        controllerToken: S.device.controllerToken,
+        deviceId: S.device.deviceId,
+        sessionId: S.session,
+        recipient: "device",
+        kind: "bye"
+      };
+      api("send_signal", signal).catch(() => {});
+      api("send_command", {
+        controllerToken: S.device.controllerToken,
+        deviceId: S.device.deviceId,
+        command: "disconnect",
+        payload: {}
+      }).catch(() => {});
+    }
   }
   const old = S.pc;
   S.pc = null;
@@ -897,6 +914,12 @@ async function unpairSelectedDevice() {
   S.reconnectTimer = null;
   $("unpair").disabled = true;
   try {
+    // Close the camera session over WebRTC before removing the pairing token.
+    if (S.pc && S.controlChannel && S.controlChannel.readyState === "open") {
+      S.controlChannel.send(JSON.stringify({
+        type: "command", name: "disconnect", payload: {}, sentAt: Date.now()
+      }));
+    }
     await api("unpair_device", {
       controllerToken: selected.controllerToken,
       deviceId: selected.deviceId
@@ -1017,7 +1040,11 @@ window.addEventListener("online", () => {
   }
 });
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState !== "visible" || !S.pc) return;
+  if (document.visibilityState !== "visible") return;
+  if (S.audioContext && S.audioContext.state === "suspended") {
+    S.audioContext.resume().catch(error => console.debug("AudioContext resume failed", error));
+  }
+  if (!S.pc) return;
   const state = S.pc.connectionState;
   if (["disconnected", "failed", "closed"].includes(state)) {
     scheduleReconnect(S.pc);
