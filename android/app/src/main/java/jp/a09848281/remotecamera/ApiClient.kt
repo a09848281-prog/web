@@ -11,7 +11,7 @@ import java.net.URLEncoder
 
 class ApiClient(private val gasUrl: String) {
     private val retryableActions = setOf(
-        "health", "poll_signals", "get_settings", "get_locations"
+        "health", "device_poll", "poll_signals", "get_settings", "get_locations"
     )
 
     fun call(action: String, values: JSONObject = JSONObject()): JSONObject {
