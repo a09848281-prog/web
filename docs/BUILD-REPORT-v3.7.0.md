@@ -6,7 +6,7 @@
 - Version name: `3.7.0`
 - Version code: `307`
 - Workflow: [Build Android APK #104](https://github.com/a09848281-prog/web/actions/runs/44270585920)
-- Workflow run ID: `44269891208`
+- Workflow run ID: `44270585920`
 - Artifact: `remote-camera-debug-apk-v3.7`
 - Artifact ID: `14411898040`
 - Artifact status: successful, not expired
