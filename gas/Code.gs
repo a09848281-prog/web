@@ -27,7 +27,7 @@ function doGet() {
 }
 
 function health_() {
-  const version = "3.8.0";
+  const version = "3.9.0";
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty("DB_SPREADSHEET_ID");
   if (!spreadsheetId) {
     return {
@@ -79,13 +79,13 @@ function doPost(e) {
     result = dispatch_(req);
     if (!result || typeof result !== "object") result = { ok: true, value: result };
     result.serverMs = Date.now() - startedAt;
-    result.apiVersion = "3.8.0";
+    result.apiVersion = "3.9.0";
   } catch (err) {
     result = {
       ok: false,
       error: safeError_(err),
       serverMs: Date.now() - startedAt,
-      apiVersion: "3.8.0"
+      apiVersion: "3.9.0"
     };
   }
   if (params.mode === "json") {
@@ -469,7 +469,7 @@ function devicePoll_(r) {
   }
 
   const settingsHit = find_("Settings", 0, id);
-  let settings = { quality: "720", dataMode: "standard", connectedLocationEnabled: false, idleLocationEnabled: false, connectedInterval: 30, idleInterval: 300 };
+  let settings = { quality: "720", dataMode: "standard", captureRatio: "16:9", fpsLimit: 24, connectedLocationEnabled: false, idleLocationEnabled: false, connectedInterval: 30, idleInterval: 300 };
   if (settingsHit) {
     try { settings = Object.assign(settings, JSON.parse(settingsHit.v[1] || "{}")); } catch (err) {}
   }
@@ -538,7 +538,7 @@ function pollSignals_(r) {
 function sendCommand_(r) {
   const d = authController_(r);
   const command = String(r.command || "");
-  const allowed = ["location_once", "location_settings", "camera", "volume", "quality", "data_mode", "disconnect"];
+  const allowed = ["location_once", "location_settings", "camera", "volume", "quality", "data_mode", "flashlight", "disconnect"];
   if (!allowed.includes(command)) throw Error("許可されていない命令です。");
   const commandId = Utilities.getUuid();
   append_("Commands", [commandId, d.deviceId, "", command, JSON.stringify(r.payload || {}).slice(0, 5000), now_(), new Date(Date.now() + COMMAND_MINUTES * 60000), "pending"]);
@@ -564,7 +564,7 @@ function clamp_(value, min, max, fallback) {
 function getSettings_(r) {
   const d = authController_(r);
   const found = find_("Settings", 0, d.deviceId);
-  let settings = { quality: "720", dataMode: "standard", connectedLocationEnabled: false, idleLocationEnabled: false, connectedInterval: 30, idleInterval: 300 };
+  let settings = { quality: "720", dataMode: "standard", captureRatio: "16:9", fpsLimit: 24, connectedLocationEnabled: false, idleLocationEnabled: false, connectedInterval: 30, idleInterval: 300 };
   if (found) {
     try { settings = Object.assign(settings, JSON.parse(found.v[1] || "{}")); } catch (err) {}
   }
@@ -576,6 +576,8 @@ function saveSettings_(r) {
   const clean = {
     quality: ["auto", "360", "480", "720", "1080"].includes(String(s.quality)) ? String(s.quality) : "720",
     dataMode: ["auto", "ultra", "save", "standard", "high"].includes(String(s.dataMode)) ? String(s.dataMode) : "standard",
+    captureRatio: ["16:9", "4:3", "1:1", "9:16"].includes(String(s.captureRatio)) ? String(s.captureRatio) : "16:9",
+    fpsLimit: clamp_(s.fpsLimit, 15, 30, 24),
     connectedLocationEnabled: s.connectedLocationEnabled === true,
     idleLocationEnabled: s.idleLocationEnabled === true,
     connectedInterval: clamp_(s.connectedInterval, 10, 3600, 30),
