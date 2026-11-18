@@ -23,6 +23,7 @@ Web/API version：`3.9.0`
 - [v3.9クイックスタート](docs/QUICKSTART-v3.9.0.md)
 - [GAS v3.9.0再デプロイ](docs/GAS-REDEPLOY-v3.9.0.md)
 - [v3.9機能と制限](docs/FEATURES-v3.9.0.md)
+- [v3.9ビルド検証結果（CI成功・実機待ち）](docs/BUILD-REPORT-v3.9.0.md)
 
 ---
 
