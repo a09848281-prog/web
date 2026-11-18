@@ -40,6 +40,8 @@ const S = {
   remoteVideoStream: null,
   receiveVolume: 70,
   controlChannel: null,
+  lastGasServerMs: null,
+  lastGasApiVersion: "",
   sessionTimer: null,
   connectedAt: 0
 };
@@ -142,8 +144,19 @@ function apiOnce(action, data = {}) {
         origin.endsWith(".googleusercontent.com");
       if (!allowedOrigin) return;
       const result = event.data.result;
+      if (result && Number.isFinite(Number(result.serverMs))) {
+        S.lastGasServerMs = Number(result.serverMs);
+        S.lastGasApiVersion = String(result.apiVersion || "");
+        if ($("gasTiming")) {
+          $("gasTiming").textContent = "GAS処理 " + S.lastGasServerMs + " ms" +
+            (S.lastGasApiVersion ? " / API " + S.lastGasApiVersion : "");
+        }
+      }
       if (!result || result.ok !== true) {
-        finish(Error(result && result.error ? result.error : "GAS APIエラー"));
+        const error = Error(result && result.error ? result.error : "GAS APIエラー");
+        error.serverMs = result && Number.isFinite(Number(result.serverMs)) ? Number(result.serverMs) : null;
+        error.apiVersion = result && result.apiVersion ? String(result.apiVersion) : "";
+        finish(error);
       } else {
         finish(null, result);
       }
@@ -731,6 +744,7 @@ async function pollAnswers() {
         sessionId: S.session,
         afterSeq: S.seq
       });
+      S.seq = Math.max(S.seq, Number(result.latestSeq) || 0);
       for (const signal of result.signals || []) {
         S.seq = Math.max(S.seq, Number(signal.seq) || 0);
         if (signal.kind === "answer" && !S.pc.remoteDescription) {
@@ -743,6 +757,11 @@ async function pollAnswers() {
       }
     } catch (error) {
       console.warn("pollAnswers", error);
+      if (error.serverMs !== null && error.serverMs !== undefined) {
+        $("gasTiming").textContent = "GAS処理 " + error.serverMs + " ms / API " + (error.apiVersion || "?");
+      } else {
+        $("gasTiming").textContent = "GAS応答なし（サーバー処理時間不明）";
+      }
       if (S.pc && S.pc.connectionState === "failed") {
         scheduleReconnect(S.pc);
         return;
