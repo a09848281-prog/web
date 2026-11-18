@@ -358,6 +358,8 @@ async function collectConnectionStats(pc) {
     const fps = decodedDelta / elapsed;
     if (decodedDelta > 0) {
       S.hasReceivedVideoFrame = true;
+      S.lastVideoFrameAt = Date.now();
+      $("videoState").textContent = "映像受信中";
       S.statsFreezeCount = 0;
     } else if (S.hasReceivedVideoFrame) {
       // Only report a freeze after at least one remote frame has arrived.
@@ -579,6 +581,8 @@ async function connect(automatic = false) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     return toast("このブラウザではマイクを利用できません。SafariのHTTPS接続を確認してください。");
   }
+  // Resume/create Web Audio while the Connect button still has user activation on iOS.
+  prepareAudioOutput();
   if (S.pc) await disconnect(false);
   try {
     // Reuse the already-authorized microphone stream across automatic retries.
