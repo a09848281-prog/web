@@ -7,7 +7,7 @@
 - 最新成功ビルド：GitHub Actions #126 https://github.com/a09848281-prog/web/actions/runs/44305341304
 - APK Artifact：`remote-camera-debug-apk-v3.8`（Artifact ID `14425809925`）
 - APK SHA-256：`0fb20d5d22189dc41d05cd3acea703a308db77bf5bfb10d8f6a9f49091bd9d4a`
-- ZIP SHA-256：`97a52b116d5dce750d4b9cc2b7d371cd399895cb78ff51583826270714caee0c`
+- ZIP SHA-256：`29169a17bec0336b78b91302b7522cc4d538c5b0c7e3a5111c85e081fce4bdf3`
 - 自動検査：Web/GAS構文、HTML/API整合性、v3.8機能チェック、Gradle APKビルド、APK権限検査まで成功。
 - Firebase：非使用。
 - Webプレビュー：https://a09848281-prog.github.io/web/preview/ （Pages deploy run 44300276881 成功）
