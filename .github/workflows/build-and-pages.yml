@@ -211,9 +211,9 @@ jobs:
           }
           if (!rtc.includes('JavaAudioDeviceModule.builder') ||
               !rtc.includes('MediaRecorder.AudioSource.MIC') ||
-              !rtc.includes('setUseHardwareAcousticEchoCanceler(false)') ||
-              !rtc.includes('setUseHardwareNoiseSuppressor(false)') ||
-              !rtc.includes('manager.mode = AudioManager.MODE_NORMAL') ||
+              !rtc.includes('setUseHardwareAcousticEchoCanceler(audioPickupMode == "voice")') ||
+              !rtc.includes('setUseHardwareNoiseSuppressor(audioPickupMode != "ambient")') ||
+              !rtc.includes('AudioManager.MODE_NORMAL') ||
               !rtc.includes('fun setVideoProfile(') ||
               !rtc.includes('fun setFlashlight(') ||
               !rtc.includes('fun sendDeviceStatus(') ||
@@ -244,14 +244,17 @@ jobs:
               !rtc.includes('AudioManager.MODE_IN_COMMUNICATION')) {
             throw new Error('v4.1 Android ambient/balanced/voice microphone preset settings are incomplete.');
           }
-          for (const id of ['pttLock','remoteMute','audioLevel','audioLevelText']) {
+          for (const id of ['pttLock','remoteMute','audioLevel','audioLevelText','androidSpeakerVolume','androidSpeakerVolumeValue']) {
             if (!ids.includes(id)) throw new Error('Missing v4.1 audio control: ' + id);
           }
           if (!app.includes('setPointerCapture') ||
               !app.includes('180000') ||
               !app.includes('function startAudioMeter') ||
               !app.includes('remoteAudioMuted') ||
-              !app.includes('pttSafetyTimer')) {
+              !app.includes('pttSafetyTimer') ||
+              !app.includes('sendControlCommand("volume"') ||
+              !android.includes('STREAM_MUSIC') ||
+              !android.includes('STREAM_VOICE_CALL')) {
             throw new Error('v4.1 push-to-talk safety, audio meter or receive mute is incomplete.');
           }
           console.log('v4.1 mic presets, connection-safe preset changes, PTT safety, keyboard input and audio diagnostics OK.');
