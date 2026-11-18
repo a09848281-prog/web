@@ -407,6 +407,9 @@ async function copyCoordinates() {
 }
 
 async function connect(automatic = false) {
+  // A direct click handler receives a PointerEvent; only the literal true
+  // value is used for an automatic retry.
+  automatic = automatic === true;
   if (!S.device) return toast("先にAndroidをペアリングしてください。");
   if (!automatic) {
     S.manualDisconnect = false;
