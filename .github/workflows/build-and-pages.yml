@@ -102,9 +102,17 @@ jobs:
           }
           if (!rtc.includes('Never reconfigure Camera2 in the middle of a live WebRTC session') ||
               !rtc.includes('Close stale sessions after') ||
+              !rtc.includes('Ignoring duplicate offer for active session') ||
               !rtc.includes('onCameraDisconnected()') ||
-              !rtc.includes('onCameraFreezed(')) {
-            throw new Error('Live quality update, stale peer cleanup, or camera fault diagnostics are missing.');
+              !rtc.includes('onCameraFreezed(') ||
+              !rtc.includes('private fun applySenderParameters') ||
+              !rtc.includes('deferredFormatMessageFor')) {
+            throw new Error('Smooth quality updates, stale/duplicate peer cleanup, or camera recovery is missing.');
+          }
+          const qualityCall = 'rtc?.setQuality(currentQuality, currentDataMode)';
+          const offerCall = 'rtc?.handleOffer(session, signal.optString("sdp"))';
+          if (!android.includes(qualityCall) || android.indexOf(qualityCall) > android.indexOf(offerCall)) {
+            throw new Error('Selected quality must be applied before the initial Camera2 capture begins.');
           }
           if (!main.includes('keepAwakeSwitch') ||
               !main.includes('EXTRA_KEEP_CPU_AWAKE') ||
