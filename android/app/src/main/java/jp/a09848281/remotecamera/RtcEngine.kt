@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import org.json.JSONObject
 import org.webrtc.*
 import java.util.concurrent.ConcurrentHashMap
@@ -20,10 +21,14 @@ class RtcEngine(
     private val deviceId: String,
     private val secret: String,
     private val scope: CoroutineScope,
-    private val onState: (String) -> Unit
+    private val onState: (String) -> Unit,
+    private val onControlCommand: (JSONObject) -> Unit = {}
 ) {
     private val peers = ConcurrentHashMap<String, PeerConnection>()
     private val videoSenders = ConcurrentHashMap<String, RtpSender>()
+    private val dataChannels = ConcurrentHashMap<String, DataChannel>()
+    private val iceStates = ConcurrentHashMap<String, PeerConnection.IceConnectionState>()
+    private val disconnectTimers = ConcurrentHashMap<String, Job>()
     private var factory: PeerConnectionFactory? = null
     private var egl: EglBase? = null
     private var capturer: CameraVideoCapturer? = null
@@ -282,12 +287,48 @@ class RtcEngine(
             val observer = object : PeerConnection.Observer {
                 override fun onSignalingChange(state: PeerConnection.SignalingState) {}
                 override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-                    onState("WebRTC: " + state.name)
-                    if (state == PeerConnection.IceConnectionState.FAILED ||
-                        state == PeerConnection.IceConnectionState.CLOSED) {
-                        peers.remove(sessionId)
-                        videoSenders.remove(sessionId)
-                        if (peers.isEmpty()) stopMedia()
+                    iceStates[sessionId] = state
+                    onState("WebRTC通信：" + state.name)
+                    when (state) {
+                        PeerConnection.IceConnectionState.CONNECTED,
+                        PeerConnection.IceConnectionState.COMPLETED -> {
+                            disconnectTimers.remove(sessionId)?.cancel()
+                        }
+                        PeerConnection.IceConnectionState.DISCONNECTED -> {
+                            // DISCONNECTED can be a short Wi-Fi handover. Wait before
+                            // disposing the peer so brief packet loss does not tear down video.
+                            if (!disconnectTimers.containsKey(sessionId)) {
+                                val timer = scope.launch(Dispatchers.IO) {
+                                    delay(8000L)
+                                    if (iceStates[sessionId] == PeerConnection.IceConnectionState.DISCONNECTED &&
+                                        peers.remove(sessionId, peer)) {
+                                        videoSenders.remove(sessionId)
+                                        dataChannels.remove(sessionId)?.let {
+                                            try { it.close() } catch (_: Exception) {}
+                                        }
+                                        iceStates.remove(sessionId)
+                                        try { peer.close() } catch (_: Exception) {}
+                                        if (peers.isEmpty()) stopMedia()
+                                        onState("通信が8秒以上復帰しないため、この接続を終了しました。Webから再接続できます")
+                                    }
+                                    disconnectTimers.remove(sessionId)
+                                }
+                                val previous = disconnectTimers.putIfAbsent(sessionId, timer)
+                                if (previous != null) timer.cancel()
+                            }
+                        }
+                        PeerConnection.IceConnectionState.FAILED,
+                        PeerConnection.IceConnectionState.CLOSED -> {
+                            disconnectTimers.remove(sessionId)?.cancel()
+                            peers.remove(sessionId)
+                            videoSenders.remove(sessionId)
+                            dataChannels.remove(sessionId)?.let {
+                                try { it.close() } catch (_: Exception) {}
+                            }
+                            iceStates.remove(sessionId)
+                            if (peers.isEmpty()) stopMedia()
+                        }
+                        else -> Unit
                     }
                 }
                 override fun onIceConnectionReceivingChange(receiving: Boolean) {}
@@ -310,7 +351,28 @@ class RtcEngine(
                 override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) {}
                 override fun onAddStream(stream: MediaStream) {}
                 override fun onRemoveStream(stream: MediaStream) {}
-                override fun onDataChannel(channel: DataChannel) {}
+                override fun onDataChannel(channel: DataChannel) {
+                    dataChannels[sessionId] = channel
+                    channel.registerObserver(object : DataChannel.Observer {
+                        override fun onBufferedAmountChange(previousAmount: Long) {}
+                        override fun onStateChange() {
+                            onState("操作用データチャネル：" + channel.state().name)
+                        }
+                        override fun onMessage(buffer: DataChannel.Buffer) {
+                            if (buffer.binary) return
+                            try {
+                                val bytes = ByteArray(buffer.data.remaining())
+                                buffer.data.get(bytes)
+                                val message = JSONObject(String(bytes, Charsets.UTF_8))
+                                if (message.optString("type") == "command") {
+                                    onControlCommand(message)
+                                }
+                            } catch (e: Exception) {
+                                Log.w("RemoteCameraRTC", "Invalid control data-channel message", e)
+                            }
+                        }
+                    })
+                }
                 override fun onRenegotiationNeeded() {}
                 override fun onAddTrack(receiver: RtpReceiver, streams: Array<MediaStream>) {}
             }
@@ -376,13 +438,22 @@ class RtcEngine(
 
     @Synchronized
     fun closeSession(sessionId: String) {
+        disconnectTimers.remove(sessionId)?.cancel()
+        val channel = dataChannels.remove(sessionId)
+        try { channel?.close() } catch (_: Exception) {}
         val peer = peers.remove(sessionId)
         videoSenders.remove(sessionId)
+        iceStates.remove(sessionId)
         try { peer?.close() } catch (_: Exception) {}
         if (peers.isEmpty()) stopMedia()
     }
 
     fun hasPeers(): Boolean = peers.isNotEmpty()
+
+    fun hasConnectedPeer(): Boolean = iceStates.values.any {
+        it == PeerConnection.IceConnectionState.CONNECTED ||
+            it == PeerConnection.IceConnectionState.COMPLETED
+    }
 
     fun switchCamera(facing: String) {
         val camera = capturer ?: return
@@ -470,6 +541,11 @@ class RtcEngine(
     }
 
     fun dispose() {
+        disconnectTimers.values.forEach { it.cancel() }
+        disconnectTimers.clear()
+        dataChannels.values.forEach { try { it.close() } catch (_: Exception) {} }
+        dataChannels.clear()
+        iceStates.clear()
         peers.values.forEach { try { it.close() } catch (_: Exception) {} }
         peers.clear()
         videoSenders.clear()
