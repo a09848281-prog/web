@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui]
+    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase]
     paths:
       - "android/**"
       - "web/**"
@@ -143,24 +143,64 @@ jobs:
               !app.includes('failedPeer.connectionState === "connected" && !forceReconnect')) {
             throw new Error('Frozen video frames must trigger bounded forced reconnect only after an initial frame, without overriding manual disconnect.');
           }
-          console.log('v3.7: wide camera selection, smooth live quality changes, camera recovery, frozen-frame detection, STUN, location recovery, mic-preserving reconnect and responsive controls OK.');
+          console.log('v3.7 inherited stability checks passed.');
+          const apiClient = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/ApiClient.kt', 'utf8');
+          if (!app.includes('createDataChannel("remote-control"') ||
+              !app.includes('function sendControlCommand') ||
+              !app.includes('function startVideoWatchdog') ||
+              !app.includes('requestVideoFrameCallback') ||
+              !app.includes('function setReceiveVolume') ||
+              !app.includes('Non-trickle ICE: no further GAS signal polling is needed') ||
+              !html.includes('id="videoState"') ||
+              !html.includes('受信音量（iPad）')) {
+            throw new Error('v3.8 WebRTC control channel, video-frame watchdog, local audio gain or UI indicator is missing.');
+          }
+          if (!rtc.includes('override fun onDataChannel(channel: DataChannel)') ||
+              !rtc.includes('onControlCommand(message)') ||
+              !rtc.includes('fun hasConnectedPeer()') ||
+              !rtc.includes('delay(8000L)')) {
+            throw new Error('v3.8 Android data-channel command receiver or ICE recovery grace timer is missing.');
+          }
+          if (!android.includes('rtc?.hasConnectedPeer() == true') ||
+              !android.includes('locationRequestActive') ||
+              !android.includes('now - cached.time <= 60000L') ||
+              !android.includes('withTimeoutOrNull(8000L)') ||
+              !android.includes('GAS一時エラー：待機を継続して再試行します')) {
+            throw new Error('v3.8 GAS polling pause, retry backoff or faster serialized location acquisition is missing.');
+          }
+          if (!apiClient.includes('retryableActions') ||
+              !apiClient.includes('connectTimeout = 8000') ||
+              !apiClient.includes('readTimeout = 12000') ||
+              !apiClient.includes('Thread.sleep(300L')) {
+            throw new Error('v3.8 Android bounded retry and shorter GAS transport timeout is missing.');
+          }
+          if (!gas.includes('function readTail_') ||
+              !gas.includes('serverMs = Date.now() - startedAt') ||
+              !gas.includes('CacheService.getScriptCache()') ||
+              !gas.includes('latestSeq: Math.max(after, signalTail.lastRow)')) {
+            throw new Error('v3.8 GAS indexed-tail reads, server timing or last-seen write throttling is missing.');
+          }
+          if (/firebase/i.test(fs.readFileSync('android/app/build.gradle.kts', 'utf8'))) {
+            throw new Error('Firebase dependency is forbidden in this project.');
+          }
+          console.log('v3.8 direct WebRTC controls, local iPad audio gain, video watchdog, bounded GAS retries, optimized Sheets reads and Firebase-free dependencies OK.');
           NODE
-      - name: Verify v3.7 Android and Web version alignment
+      - name:       - name: Verify v3.8 Android and Web version alignment
         run: |
           node <<'NODE'
           const fs = require('fs');
           const gradle = fs.readFileSync('android/app/build.gradle.kts', 'utf8');
           const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
           const workflow = fs.readFileSync('.github/workflows/build-and-pages.yml', 'utf8');
-          if (!/versionCode\s*=\s*307/.test(gradle) ||
-              !/versionName\s*=\s*"3\.7\.0"/.test(gradle) ||
-              config.appVersion !== '3.7.0' ||
-              !workflow.includes('name: remote-camera-debug-apk-v3.7')) {
-            throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v3.7.0.');
+          if (!/versionCode\s*=\s*308/.test(gradle) ||
+              !/versionName\s*=\s*"3\.8\.0"/.test(gradle) ||
+              config.appVersion !== '3.8.0' ||
+              !workflow.includes('name: remote-camera-debug-apk-v3.8')) {
+            throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v3.8.0.');
           }
-          console.log('Android 3.7.0 / versionCode 307 / Web 3.7.0 / APK artifact v3.7 are aligned.');
+          console.log('Android 3.8.0 / versionCode 308 / Web 3.8.0 / APK artifact v3.8 are aligned.');
           NODE
-      - name: Build Android debug APK
+Build Android debug APK
         working-directory: android
         run: gradle :app:assembleDebug --stacktrace
       - name: Verify permissions inside the built APK
@@ -182,7 +222,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-camera-debug-apk-v3.7
+          name: remote-camera-debug-apk-v3.8
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
