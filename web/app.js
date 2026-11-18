@@ -290,6 +290,7 @@ async function collectConnectionStats(pc) {
   S.statsBusy = true;
   try {
     const report = await pc.getStats();
+    if (pc !== S.pc) return;
     let video = null;
     let candidatePair = null;
     report.forEach(stat => {
@@ -709,6 +710,7 @@ function drawMap(points) {
     Number.isFinite(Number(point.lat)) && Number.isFinite(Number(point.lng))
   );
   if (!valid.length) {
+    S.lastLocation = null;
     $("locationInfo").textContent = "位置情報はありません。";
     return;
   }
