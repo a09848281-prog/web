@@ -201,6 +201,23 @@ function readTail_(name, maxRows) {
   };
 }
 
+function readSince_(name, afterRow, maxRows) {
+  const sh = sheet_(name);
+  const lastRow = sh.getLastRow();
+  const limit = Math.max(1, Number(maxRows) || 1000);
+  // Signals use their physical sheet row as the monotonically increasing cursor.
+  // Read only rows appended after the last cursor, with a cap for old installations.
+  const cursor = Math.max(1, Math.floor(Number(afterRow) || 0));
+  let firstRow = Math.max(2, cursor + 1);
+  firstRow = Math.max(firstRow, lastRow - limit + 1);
+  if (lastRow < firstRow) return { firstRow: firstRow, lastRow: lastRow, values: [] };
+  return {
+    firstRow: firstRow,
+    lastRow: lastRow,
+    values: sh.getRange(firstRow, 1, lastRow - firstRow + 1, TABLES[name].length).getValues()
+  };
+}
+
 function findRecent_(name, column, value, maxRows) {
   const tail = readTail_(name, maxRows || 5000);
   for (let i = tail.values.length - 1; i >= 0; i--) {
@@ -440,7 +457,7 @@ function devicePoll_(r) {
   }
 
   const after = Math.max(0, Number(r.afterSeq || 0));
-  const signalTail = readTail_("Signals", 5000);
+  const signalTail = readSince_("Signals", after, 1000);
   const signals = [];
   for (let i = 0; i < signalTail.values.length; i++) {
     const v = signalTail.values[i];
@@ -505,7 +522,7 @@ function pollSignals_(r) {
   const d = authController_(r);
   const session = String(r.sessionId || "");
   const after = Math.max(0, Number(r.afterSeq || 0));
-  const tail = readTail_("Signals", 5000);
+  const tail = readSince_("Signals", after, 1000);
   const signals = [];
   for (let i = 0; i < tail.values.length; i++) {
     const v = tail.values[i];
@@ -515,7 +532,7 @@ function pollSignals_(r) {
       signals.push({ seq: seq, kind: v[5], sdp: v[6], candidate: v[7] ? JSON.parse(v[7]) : null });
     }
   }
-  return { ok: true, signals: signals };
+  return { ok: true, signals: signals, latestSeq: Math.max(after, tail.lastRow) };
 }
 
 function sendCommand_(r) {
