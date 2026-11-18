@@ -235,8 +235,8 @@ jobs:
           const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
           const workflow = fs.readFileSync('.github/workflows/build-and-pages.yml', 'utf8');
           if (!/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v39preview"/.test(gradle) ||
-              !/versionCode\s*=\s*309/.test(gradle) ||
-              !/versionName\s*=\s*"3\.9\.0"/.test(gradle) ||
+              !/versionCode\s*=\s*400/.test(gradle) ||
+              !/versionName\s*=\s*"4\.0\.0"/.test(gradle) ||
               config.appVersion !== '4.0.0' ||
               !workflow.includes('name: remote-camera-debug-apk-v4.0')) {
             throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v4.0.0.');
