@@ -1,16 +1,20 @@
 # 実装状況 v3.8.0
 
-## v3.8.0 検証ブランチ
-- ブランチ：`rebuild-v3.8-realtime-stability-no-firebase`
-- GitHub Actions #111：成功 https://github.com/a09848281-prog/web/actions/runs/44298257614
-- APK Artifact：`remote-camera-debug-apk-v3.8`（Artifact ID：`14423832827`）
-- Android package：`jp.a09848281.remotecamera` / versionCode 308 / versionName 3.8.0
-- 自動検査：Web/GAS構文、HTML/API整合性、v3.8機能チェック、Gradleビルド、APK権限検査まで成功。
+## v3.8.0 検証・ビルド済み
+- 検証ブランチ：`rebuild-v3.8-realtime-stability-no-firebase`
+- Android：`jp.a09848281.remotecamera.v38preview` / versionCode 308 / versionName 3.8.0
+- Android表示名：Remote Camera 3.8 Preview（v3.7と並行インストール可能）
+- 最新成功ビルド：GitHub Actions #124 https://github.com/a09848281-prog/web/actions/runs/44303726454
+- APK Artifact：`remote-camera-debug-apk-v3.8`（Artifact ID `14427925259`）
+- APK SHA-256：`73dcbf3c8c89b55f95d9d519c9593a443ae465f58bad986c438598c9220b0e35`
+- ZIP SHA-256：`97a52b116d5dce750d4b9cc2b7d371cd399895cb78ff51583826270714caee0c`
+- 自動検査：Web/GAS構文、HTML/API整合性、v3.8機能チェック、Gradle APKビルド、APK権限検査まで成功。
 - Firebase：非使用。
+- Webプレビュー：https://a09848281-prog.github.io/web/preview/ （Pages deploy run 44300276881 成功）
+- 正式版ルートURL `/web/` と既存v3.7 APKは維持。プレビューのみ別パスと別Android applicationIdを使用。
+- GAS：`gas/Code.gs` v3.8.0をApps Scriptへ貼り付け、既存Webアプリデプロイを「新バージョン」で更新する必要あり。
 - 実機検証：未完了（Galaxy A22 5G / Android 13、iPad Safari）。
-- GAS：v3.8.0のCode.gsをApps Scriptへ貼り付け、新バージョンとして再デプロイする作業が必要。
-- GitHub Pages：mainから公開。v3.8作業ブランチはまだ公開されていない。
-- mainへのアプリ／Web／GAS統合：未実施。mainに追加した変更はv3.8ブランチのCIビルド対象設定のみ。
+- PR #2：Draft・未マージ https://github.com/a09848281-prog/web/pull/2
 
 ## v3.8.0の主要改善
 - 接続中の操作をWebRTCデータチャネルで直接送信し、操作のGAS依存を低減。
