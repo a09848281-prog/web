@@ -356,7 +356,8 @@ class MonitorService : Service() {
                                                         .put("type", "command_result")
                                                         .put("requestId", requestId)
                                                         .put("name", name)
-                                                        .put("success", success))
+                                                        .put("success", success)
+                                                        .put("payload", payload))
                                                 }
                                             }
                                         }
