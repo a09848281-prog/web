@@ -373,7 +373,6 @@ class MonitorService : Service() {
                                         if (rtc == null) {
                                             val currentApi = api ?: continue
                                             rtc = RtcEngine(this, currentApi, deviceId, secret, audioPickupMode, scope, ::notifyState) { message ->
-                                                rtcAudioPickupMode = audioPickupMode
                                                 val name = message.optString("name")
                                                 val payload = message.optJSONObject("payload") ?: JSONObject()
                                                 val requestId = message.optString("requestId")
@@ -388,6 +387,7 @@ class MonitorService : Service() {
                                                         .put("payload", payload))
                                                 }
                                             }
+                                            rtcAudioPickupMode = audioPickupMode
                                         }
                                         // Apply the selected profile before creating Camera2 and the first peer.
                                         // The sender bitrate/FPS are applied inside handleOffer after tracks are added.
