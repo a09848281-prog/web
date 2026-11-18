@@ -396,7 +396,7 @@ class MonitorService : Service() {
         var secret = prefs.getString("deviceSecret", "") ?: ""
         if (id.isBlank() || secret.isBlank()) {
             id = UUID.randomUUID().toString()
-            val response = api!!.call("device_begin", JSONObject().put("deviceId", id).put("deviceName", Build.MODEL ?: "Android"))
+            val response = api!!.call("device_begin", JSONObject().put("deviceId", id).put("deviceName", (Build.MODEL ?: "Android") + " (v3.8 Preview)"))
             secret = response.getString("deviceSecret")
             prefs.edit().putString("deviceId", id).putString("deviceSecret", secret)
                 .putBoolean("serverPaired", false).putInt("afterSeq", 0).apply()
