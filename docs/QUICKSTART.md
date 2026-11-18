@@ -15,11 +15,12 @@
 1. GitHubリポジトリの Settings → Pages を開きます。
 2. Build and deployment の Source を GitHub Actions にします。
 3. Actions → Deploy Web Pages を実行します（公開デプロイは main ブランチからのみ実行します）。
-4. v3.8の作業ブランチは検証用であり、mainへ反映するまでは公開Pagesには反映されません。
-5. 公開URL： https://a09848281-prog.github.io/web/
+4. v3.8.0の検証用Web画面は `https://a09848281-prog.github.io/web/preview/` で公開しています。正式版のトップページ `https://a09848281-prog.github.io/web/` は変更していません。
+5. v3.8プレビューを使う前に、GASのCode.gsもv3.8.0へ更新・再デプロイしてください。Web画面の起動時チェックでAPIバージョンが一致しない場合はペアリングを停止します。
+6. 正式版URL： https://a09848281-prog.github.io/web/
 
 ## 3. Androidの準備
-1. GitHub Actionsで `rebuild-v3.8-realtime-stability-no-firebase` ブランチの最新成功した `Build Android APK` 実行を開き、Artifact `remote-camera-debug-apk-v3.8` を取得してインストールします。
+1. GitHub Actionsで `rebuild-v3.8-realtime-stability-no-firebase` ブランチの最新成功した `Build Android APK` 実行を開き、Artifact `remote-camera-debug-apk-v3.8` を取得してインストールします。更新時に署名不一致で拒否された場合は、古いアプリをアンインストールしてから入れ直し、8桁コードで再ペアリングしてください（アンインストールすると端末側の登録情報が消えます）。
 2. Android 13端末でアプリを開きます。
 3. カメラ・マイク・通知を許可します。位置情報は任意ですが、利用する場合は「正確な位置情報」を許可し、Android本体の位置情報もONにします。待機開始後に位置情報権限を追加で許可した場合は、一度待機を停止してから再開始してください。
 4. 「監視待機を開始」を押します。
