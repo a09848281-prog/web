@@ -39,6 +39,7 @@ const S = {
   remoteAudioSource: null,
   remoteVideoStream: null,
   receiveVolume: 70,
+  settingsSaveChain: Promise.resolve(),
   controlChannel: null,
   lastGasServerMs: null,
   lastGasApiVersion: "",
@@ -900,20 +901,26 @@ async function saveSettings() {
     });
     await sendControlCommand("location_settings", settings);
     toast("Androidに設定を反映しました。GASへ保存中…");
-    api("save_settings", {
-      controllerToken: S.device.controllerToken,
-      deviceId: S.device.deviceId,
-      settings
-    }).then(() => toast("設定を反映し、GASにも保存しました。"))
+    S.settingsSaveChain = S.settingsSaveChain
+      .catch(() => {})
+      .then(() => api("save_settings", {
+        controllerToken: S.device.controllerToken,
+        deviceId: S.device.deviceId,
+        settings
+      }));
+    S.settingsSaveChain.then(() => toast("設定を反映し、GASにも保存しました。"))
       .catch(error => toast("Androidには反映済みですが、GAS保存に失敗しました：" + error.message));
     return;
   }
 
-  await api("save_settings", {
-    controllerToken: S.device.controllerToken,
-    deviceId: S.device.deviceId,
-    settings
-  });
+  S.settingsSaveChain = S.settingsSaveChain
+    .catch(() => {})
+    .then(() => api("save_settings", {
+      controllerToken: S.device.controllerToken,
+      deviceId: S.device.deviceId,
+      settings
+    }));
+  await S.settingsSaveChain;
   await sendControlCommand("quality", {
     quality: settings.quality,
     dataMode: settings.dataMode
