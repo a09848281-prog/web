@@ -149,7 +149,6 @@ class MonitorService : Service() {
                 .putString("audioPickupMode", audioPickupMode)
                 .putString("currentDataMode", currentDataMode)
                 .apply()
-            recycleRtcForPendingAudioModeIfIdle()
             rtc?.setVideoProfile(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)
             updateCpuWakeLock(keepAwake)
             if (!remoteEnabled) {
@@ -158,7 +157,7 @@ class MonitorService : Service() {
                 rtcAudioPickupMode = null
                 notifyState("遠隔カメラ・マイクはスマホ設定でOFFです。待機通信は継続しています")
             } else {
-                notifyState(if (rtc?.hasPeers() == true && rtcAudioPickupMode != audioPickupMode) "マイクモードを保存しました。現在の接続を維持し、次回接続時に反映します" else "遠隔カメラ・マイクの起動を許可しました。待機中は撮影・録音していません")
+                notifyState(if (rtcAudioPickupMode != audioPickupMode) { if (rtc?.hasPeers() == true) "マイクモードを保存しました。現在の接続を維持し、次回接続時に反映します" else "マイクモードを保存しました。次回のWeb接続から反映します" } else "遠隔カメラ・マイクの起動を許可しました。待機中は撮影・録音していません")
             }
             return START_STICKY
         }
