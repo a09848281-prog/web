@@ -77,3 +77,14 @@
 #snapshot:disabled{opacity:.45}
 .videoPane footer{gap:12px;flex-wrap:wrap}
 @media(max-width:650px){.deviceStatus{flex:1 1 100%}.videoPane footer{justify-content:flex-start}}
+
+/* v4.0: prominent push-to-talk control, preserving the existing visual language */
+.viewerControls #ptt.pttProminent{order:-1;flex:0 0 auto;min-width:220px;min-height:48px;padding:12px 18px;font-size:14px;font-weight:750;box-shadow:0 3px 10px #d84a5730;touch-action:none;user-select:none;-webkit-user-select:none}
+.viewerControls #ptt.pttProminent:disabled{opacity:.48}
+.viewerControls #ptt.pttProminent.active{background:#8e2935;transform:scale(.98)}
+@media(max-width:650px){.viewerControls #ptt.pttProminent{flex:1 1 100%;min-height:54px;font-size:16px}}
+
+.audioMeterLabel{display:flex;align-items:center;gap:8px;min-width:190px;margin:0;font-size:12px;color:#52647b}
+.audioMeterLabel meter{width:90px;height:14px}
+#pttLock,#remoteMute{min-height:44px}
+@media(max-width:650px){.audioMeterLabel{flex:1 1 100%;min-height:34px}}

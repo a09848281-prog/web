@@ -11,6 +11,10 @@ const S = {
   mic: null,
   remoteAudioTracks: [],
   pttActive: false,
+  pttLocked: false,
+  remoteAudioMuted: false,
+  remoteAnalyser: null,
+  audioMeterFrame: null,
   session: "",
   seq: 0,
   map: null,
@@ -225,6 +229,8 @@ function setControlsEnabled(enabled) {
   $("disconnect").disabled = !S.pc;
   $("camera").disabled = !enabled || !S.pc;
   $("ptt").disabled = !S.pc;
+  $("pttLock").disabled = !S.pc;
+  $("remoteMute").disabled = !S.pc;
   $("snapshot").disabled = !S.pc;
   $("refreshStatus").disabled = !S.pc;
   if (!S.pc) updateFlashlightButton(false, false);
@@ -554,7 +560,11 @@ function attachRemoteAudio() {
     if (S.remoteAudioSource) S.remoteAudioSource.disconnect();
     const audioStream = new MediaStream(liveTracks);
     S.remoteAudioSource = S.audioContext.createMediaStreamSource(audioStream);
-    S.remoteAudioSource.connect(S.remoteGain);
+    S.remoteAnalyser = S.audioContext.createAnalyser();
+    S.remoteAnalyser.fftSize = 512;
+    S.remoteAudioSource.connect(S.remoteAnalyser);
+    S.remoteAnalyser.connect(S.remoteGain);
+    startAudioMeter();
     $("remoteVideo").muted = true;
     $("audioState").textContent = "Androidマイク受信中";
     if (S.audioContext.state === "suspended") {
@@ -567,6 +577,28 @@ function attachRemoteAudio() {
   }
 }
 
+function startAudioMeter() {
+  if (!S.remoteAnalyser || S.audioMeterFrame !== null) return;
+  const data = new Uint8Array(S.remoteAnalyser.fftSize);
+  const tick = () => {
+    if (!S.remoteAnalyser) { S.audioMeterFrame = null; return; }
+    S.remoteAnalyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (const value of data) { const sample = (value - 128) / 128; sum += sample * sample; }
+    const rms = Math.sqrt(sum / data.length);
+    $("audioLevel").value = Math.min(1, rms * 3);
+    $("audioLevelText").textContent = rms < 0.008 ? "静か" : rms < 0.04 ? "小さい音" : rms < 0.16 ? "音声受信中" : "大きな音";
+    S.audioMeterFrame = requestAnimationFrame(tick);
+  };
+  S.audioMeterFrame = requestAnimationFrame(tick);
+}
+function stopAudioMeter() {
+  if (S.audioMeterFrame !== null) cancelAnimationFrame(S.audioMeterFrame);
+  S.audioMeterFrame = null;
+  S.remoteAnalyser = null;
+  $("audioLevel").value = 0;
+  $("audioLevelText").textContent = "待機中";
+}
 function handleControlMessage(raw) {
   let data;
   try { data = typeof raw === "string" ? JSON.parse(raw) : raw; }
@@ -731,7 +763,7 @@ function updateAdaptiveQuality(loss, fps, rttMs) {
 }
 
 function setReceiveVolume(value, persist = true) {
-  S.receiveVolume = Math.max(0, Math.min(100, Number(value) || 0));
+  S.receiveVolume = Math.max(0, Math.min(200, Number(value) || 0));
   $("volume").value = String(S.receiveVolume);
   $("volumeValue").textContent = S.receiveVolume + "%";
   if (S.remoteGain && S.audioContext) {
@@ -899,7 +931,7 @@ async function connect(automatic = false) {
         restoreRemotePlayback();
       } else if (track.kind === "audio") {
         if (!S.remoteAudioTracks.some(existing => existing.id === track.id)) {
-          track.enabled = !S.pttActive;
+          track.enabled = !S.pttActive && !S.remoteAudioMuted;
           track.onmute = () => { $("audioState").textContent = "Androidマイク一時停止"; };
           track.onunmute = () => {
             $("audioState").textContent = "Androidマイク受信中";
@@ -1100,6 +1132,13 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   $("disconnect").disabled = true;
   $("camera").disabled = true;
   $("ptt").disabled = true;
+  $("pttLock").disabled = true;
+  $("remoteMute").disabled = true;
+  S.pttLocked = false;
+  S.remoteAudioMuted = false;
+  $("pttLock").textContent = "送話ロック OFF";
+  $("remoteMute").textContent = "🔊 Android音声 ON";
+  stopAudioMeter();
   $("ptt").classList.remove("active");
   $("ptt").textContent = "押している間だけ話す";
   $("streamState").textContent = "切断済み";
@@ -1116,9 +1155,9 @@ function ptt(enabled) {
   S.pttActive = enabled;
   track.enabled = enabled;
   // Half-duplex: mute the Android return audio while sending PTT audio.
-  S.remoteAudioTracks.forEach(remoteTrack => { remoteTrack.enabled = !enabled; });
+  S.remoteAudioTracks.forEach(remoteTrack => { remoteTrack.enabled = !enabled && !S.remoteAudioMuted; });
   $("ptt").classList.toggle("active", enabled);
-  $("ptt").textContent = enabled ? "送話中…" : "押している間だけ話す";
+  $("ptt").textContent = enabled ? "🎙 送話中…" : "🎙 押している間だけ話す";
 }
 async function loadSettings() {
   if (!S.device) return;
@@ -1385,9 +1424,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("claim").addEventListener("click", claimDevice);
   $("connect").addEventListener("click", connect);
   $("disconnect").addEventListener("click", () => disconnect(true));
-  $("ptt").addEventListener("pointerdown", event => { event.preventDefault(); ptt(true); });
+  $("ptt").addEventListener("pointerdown", event => {
+    event.preventDefault();
+    if (S.pttLocked) { S.pttLocked = false; $("pttLock").textContent = "送話ロック OFF"; ptt(false); return; }
+    ptt(true);
+  });
   ["pointerup", "pointerleave", "pointercancel", "lostpointercapture"].forEach(name => {
-    $("ptt").addEventListener(name, () => ptt(false));
+    $("ptt").addEventListener(name, () => { if (!S.pttLocked) ptt(false); });
+  });
+  $("pttLock").addEventListener("click", () => {
+    if (!S.mic || !S.mic.getAudioTracks()[0]) return;
+    S.pttLocked = !S.pttLocked;
+    $("pttLock").textContent = S.pttLocked ? "🔒 送話ロック ON" : "送話ロック OFF";
+    ptt(S.pttLocked);
+  });
+  $("remoteMute").addEventListener("click", () => {
+    S.remoteAudioMuted = !S.remoteAudioMuted;
+    S.remoteAudioTracks.forEach(track => { track.enabled = !S.remoteAudioMuted && !S.pttActive; });
+    $("remoteMute").textContent = S.remoteAudioMuted ? "🔇 Android音声 OFF" : "🔊 Android音声 ON";
   });
   $("saveSettings").addEventListener("click", () => saveSettings().catch(error => toast(error.message)));
   $("locate").addEventListener("click", () => command("location_once").catch(error => toast(error.message)));
