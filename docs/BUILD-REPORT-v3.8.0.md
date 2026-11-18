@@ -64,7 +64,7 @@ The v3.8 APK uses a separate application ID (`jp.a09848281.remotecamera.v38previ
 
 - This is a successful debug APK build and automated source/manifest test. It is not a physical-device test.
 - Galaxy A22 5G / Android 13 and iPad Safari testing is still required for sustained streaming, audio gain, camera switching, location accuracy, app resume, screen-off standby, and recovery after network interruption.
-- The v3.8 branch is separate from `main`. GitHub Pages publishes from `main` only, so the live Pages site is not yet the v3.8 Web UI.
+- The v3.8 application source remains on its separate validation branch. The v3.8 Web UI preview is deployed at `/web/preview/`; the production root `/web/` remains unchanged.
 - The v3.8 `gas/Code.gs` source must be pasted into Apps Script and deployed as a new version before using the v3.8 Web UI against it. GitHub commits do not update an existing GAS deployment.
 - STUN is configured, but no TURN relay is included. Cross-network connectivity is therefore not guaranteed.
 - Android force-stop, reboot, revoked permissions, or manufacturer battery restrictions can prevent background standby from continuing.
