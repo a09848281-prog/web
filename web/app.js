@@ -16,7 +16,19 @@ const S = {
   map: null,
   marker: null,
   route: null,
-  history: []
+  history: [],
+  lastLocation: null,
+  followMap: true,
+  zoom: 1,
+  fitMode: "contain",
+  reconnectTimer: null,
+  reconnectAttempts: 0,
+  manualDisconnect: false,
+  statsTimer: null,
+  statsBusy: false,
+  previousStats: null,
+  sessionTimer: null,
+  connectedAt: 0
 };
 
 function rid() {
@@ -240,8 +252,169 @@ function waitIce(pc, ms) {
     pc.addEventListener("icegatheringstatechange", check);
   });
 }
-async function connect() {
+async function formatDuration(milliseconds) {
+  const total = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return [hours, minutes, seconds].map(value => String(value).padStart(2, "0")).join(":");
+}
+
+function startSessionClock() {
+  if (S.sessionTimer) return;
+  S.connectedAt = Date.now();
+  const update = () => {
+    $("sessionDuration").textContent = "接続時間 " + formatDuration(Date.now() - S.connectedAt);
+  };
+  update();
+  S.sessionTimer = setInterval(update, 1000);
+}
+
+function stopSessionClock() {
+  if (S.sessionTimer) clearInterval(S.sessionTimer);
+  S.sessionTimer = null;
+  S.connectedAt = 0;
+  if ($("sessionDuration")) $("sessionDuration").textContent = "接続時間 00:00:00";
+}
+
+function stopStatsMonitor() {
+  if (S.statsTimer) clearInterval(S.statsTimer);
+  S.statsTimer = null;
+  S.previousStats = null;
+  S.statsBusy = false;
+  if ($("connectionMetrics")) $("connectionMetrics").textContent = "通信状態：未接続";
+}
+
+async function collectConnectionStats(pc) {
+  if (!pc || pc !== S.pc || S.statsBusy || typeof pc.getStats !== "function") return;
+  S.statsBusy = true;
+  try {
+    const report = await pc.getStats();
+    let video = null;
+    let candidatePair = null;
+    report.forEach(stat => {
+      if (stat.type === "inbound-rtp" &&
+          (stat.kind === "video" || stat.mediaType === "video") &&
+          !stat.isRemote) video = stat;
+      if (stat.type === "candidate-pair" &&
+          stat.state === "succeeded" && (stat.selected || stat.nominated)) candidatePair = stat;
+    });
+    if (!video) return;
+    const current = {
+      timestamp: Number(video.timestamp) || Date.now(),
+      bytes: Number(video.bytesReceived) || 0,
+      packetsReceived: Number(video.packetsReceived) || 0,
+      packetsLost: Number(video.packetsLost) || 0,
+      frames: Number(video.framesDecoded) || 0
+    };
+    const previous = S.previousStats;
+    S.previousStats = current;
+    const rttMs = candidatePair && Number.isFinite(Number(candidatePair.currentRoundTripTime))
+      ? Math.round(Number(candidatePair.currentRoundTripTime) * 1000) : null;
+    if (!previous) {
+      $("connectionMetrics").textContent = "通信状態：測定中";
+      return;
+    }
+    const elapsed = Math.max(0.2, (current.timestamp - previous.timestamp) / 1000);
+    const bitrate = Math.max(0, (current.bytes - previous.bytes) * 8 / elapsed / 1000);
+    const fps = Math.max(0, (current.frames - previous.frames) / elapsed);
+    const receivedDelta = Math.max(0, current.packetsReceived - previous.packetsReceived);
+    const lostDelta = Math.max(0, current.packetsLost - previous.packetsLost);
+    const loss = receivedDelta + lostDelta > 0 ? lostDelta / (receivedDelta + lostDelta) * 100 : 0;
+    const grade = loss > 8 || (rttMs !== null && rttMs > 500) || fps < 8
+      ? "不安定" : loss > 3 || (rttMs !== null && rttMs > 280) || fps < 17 ? "注意" : "良好";
+    $("connectionMetrics").textContent =
+      "通信 " + grade + "　受信 " + bitrate.toFixed(0) + " kbps　" +
+      "映像 " + fps.toFixed(0) + " fps　" +
+      "遅延 " + (rttMs === null ? "--" : rttMs + " ms") + "　" +
+      "損失 " + loss.toFixed(1) + "%";
+  } catch (error) {
+    console.debug("getStats unavailable", error);
+  } finally {
+    S.statsBusy = false;
+  }
+}
+
+function startStatsMonitor(pc) {
+  stopStatsMonitor();
+  collectConnectionStats(pc);
+  S.statsTimer = setInterval(() => collectConnectionStats(pc), 2500);
+}
+
+function scheduleReconnect(failedPeer) {
+  if (S.manualDisconnect || !S.device || S.reconnectTimer) return;
+  const waits = [2500, 5000, 10000, 15000, 20000];
+  if (S.reconnectAttempts >= waits.length) {
+    toast("自動再接続を終了しました。回線とAndroidの待機状態を確認してください。");
+    return;
+  }
+  const attempt = S.reconnectAttempts + 1;
+  const wait = waits[S.reconnectAttempts];
+  status("再接続を準備中", false);
+  $("streamState").textContent = "再接続 " + attempt + "/" + waits.length;
+  S.reconnectTimer = setTimeout(async () => {
+    S.reconnectTimer = null;
+    if (S.manualDisconnect || !S.device || (failedPeer && S.pc !== failedPeer)) return;
+    if (failedPeer && ["connected", "connecting"].includes(failedPeer.connectionState)) return;
+    S.reconnectAttempts = attempt;
+    await disconnect(false);
+    await connect(true);
+  }, wait);
+}
+
+function updateViewerTransform() {
+  const video = $("remoteVideo");
+  video.style.transform = "scale(" + S.zoom + ")";
+  video.style.objectFit = S.fitMode;
+  $("zoomValue").textContent = Math.round(S.zoom * 100) + "%";
+}
+
+async function toggleFullscreen() {
+  const pane = $("videoPane");
+  const video = $("remoteVideo");
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else if (pane.requestFullscreen) {
+      await pane.requestFullscreen();
+    } else if (video.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen();
+    } else {
+      toast("このブラウザーは全画面表示に対応していません。");
+    }
+  } catch (error) {
+    toast("全画面表示に失敗しました: " + error.message);
+  }
+}
+
+async function copyCoordinates() {
+  if (!S.lastLocation) return toast("コピーできる位置情報がありません。");
+  const text = Number(S.lastLocation.lat).toFixed(6) + ", " +
+    Number(S.lastLocation.lng).toFixed(6);
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("座標をコピーしました: " + text);
+  } catch (_) {
+    const input = document.createElement("textarea");
+    input.value = text;
+    document.body.appendChild(input);
+    input.select();
+    const copied = document.execCommand("copy");
+    input.remove();
+    toast(copied ? "座標をコピーしました: " + text : "座標をコピーできませんでした。");
+  }
+}
+
+async function connect(automatic = false) {
   if (!S.device) return toast("先にAndroidをペアリングしてください。");
+  if (!automatic) {
+    S.manualDisconnect = false;
+    S.reconnectAttempts = 0;
+  }
+  if (S.reconnectTimer) {
+    clearTimeout(S.reconnectTimer);
+    S.reconnectTimer = null;
+  }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     return toast("このブラウザではマイクを利用できません。SafariのHTTPS接続を確認してください。");
   }
@@ -252,7 +425,14 @@ async function connect() {
     stream.getAudioTracks().forEach(track => { track.enabled = false; });
     S.session = rid();
     S.seq = 0;
-    const pc = new RTCPeerConnection({ iceServers: [] });
+    // STUN can improve NAT traversal. A TURN relay is still needed on networks
+    // that block direct peer-to-peer UDP traffic.
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" }
+      ]
+    });
     S.pc = pc;
     $("camera").disabled = false;
     const remote = new MediaStream();
@@ -272,14 +452,25 @@ async function connect() {
       $("remoteVideo").play().catch(() => toast("映像・音声を再生するには画面をタップしてください。"));
     };
     pc.onconnectionstatechange = () => {
+      if (S.pc !== pc) return;
       const state = pc.connectionState;
       $("iceState").textContent = "ICE: " + state;
       status(state === "connected" ? "監視中" : state, state === "connected");
       $("streamState").textContent = state === "connected" ? "映像・音声接続中" : "接続処理中";
+      if (state === "connected") {
+        S.reconnectAttempts = 0;
+        if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
+        S.reconnectTimer = null;
+        startSessionClock();
+        startStatsMonitor(pc);
+      } else if (state === "failed" || state === "disconnected") {
+        if (S.connectedAt) stopSessionClock();
+        scheduleReconnect(pc);
+      }
     };
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await waitIce(pc, 12000);
+    await waitIce(pc, 20000);
     await api("send_signal", {
       controllerToken: S.device.controllerToken,
       deviceId: S.device.deviceId,
@@ -297,6 +488,11 @@ async function connect() {
   } catch (error) {
     await disconnect(false);
     toast("接続開始失敗: " + error.message);
+    if (error.name !== "NotAllowedError" && error.name !== "PermissionDeniedError") {
+      scheduleReconnect(null);
+    } else {
+      S.manualDisconnect = true;
+    }
   }
 }
 async function pollAnswers() {
@@ -323,6 +519,13 @@ async function pollAnswers() {
   }
 }
 async function disconnect(sendCommand = true) {
+  if (sendCommand) {
+    S.manualDisconnect = true;
+    if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
+    S.reconnectTimer = null;
+  }
+  stopStatsMonitor();
+  stopSessionClock();
   if (sendCommand && S.pc && S.device) {
     const signal = {
       controllerToken: S.device.controllerToken,
@@ -357,6 +560,9 @@ async function disconnect(sendCommand = true) {
   $("ptt").textContent = "押している間だけ話す";
   $("streamState").textContent = "切断済み";
   $("iceState").textContent = "ICE: --";
+  if (S.reconnectAttempts >= 5 && !sendCommand) {
+    $("streamState").textContent = "再接続上限到達";
+  }
   if (S.device) status("ペアリング済み");
   else status("未ペアリング");
 }
@@ -507,14 +713,18 @@ function drawMap(points) {
     return;
   }
   const last = valid[valid.length - 1];
+  S.lastLocation = last;
   S.marker = L.marker([last.lat, last.lng]).addTo(S.map);
   if (valid.length > 1) {
     S.route = L.polyline(valid.map(point => [point.lat, point.lng]), { color: "#2865d6" }).addTo(S.map);
   }
+  const ageSeconds = Math.max(0, Math.round((Date.now() - new Date(last.timestamp).getTime()) / 1000));
   $("locationInfo").textContent = "最終取得: " + new Date(last.timestamp).toLocaleString() +
-    " / 精度 ±" + (last.accuracy || "?") + "m";
-  if (S.route) S.map.fitBounds(S.route.getBounds().pad(0.15));
-  else S.map.setView([last.lat, last.lng], 15);
+    " / 精度 ±" + (last.accuracy || "?") + "m / " + ageSeconds + "秒前 / " + (last.mode || "取得");
+  if (S.followMap) {
+    if (S.route) S.map.fitBounds(S.route.getBounds().pad(0.15));
+    else S.map.setView([last.lat, last.lng], 15);
+  }
 }
 async function deleteHistory() {
   if (!S.device || !confirm("この端末の位置情報履歴をすべて削除します。よろしいですか？")) return;
@@ -545,6 +755,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("deleteHistory").addEventListener("click", () => deleteHistory().catch(error => toast(error.message)));
   $("videoTab").addEventListener("click", showVideo);
   $("mapTab").addEventListener("click", showMap);
+  $("fullscreen").addEventListener("click", toggleFullscreen);
+  $("viewerZoom").addEventListener("input", event => {
+    S.zoom = Math.max(1, Math.min(2.5, Number(event.target.value) / 100));
+    updateViewerTransform();
+  });
+  $("fitMode").addEventListener("click", () => {
+    S.fitMode = S.fitMode === "contain" ? "cover" : "contain";
+    $("fitMode").textContent = S.fitMode === "contain" ? "全体表示" : "画面に合わせる";
+    updateViewerTransform();
+  });
+  $("mapFollow").addEventListener("change", event => {
+    S.followMap = event.target.checked;
+    if (S.followMap && S.lastLocation && S.map) {
+      S.map.setView([S.lastLocation.lat, S.lastLocation.lng], 15);
+    }
+  });
+  $("copyLocation").addEventListener("click", copyCoordinates);
   $("volume").addEventListener("input", event => { $("volumeValue").value = event.target.value + "%"; });
   $("volume").addEventListener("change", event => {
     command("volume", { percent: Number(event.target.value) }).catch(error => toast(error.message));
@@ -554,6 +781,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   $("quality").addEventListener("change", () => saveSettings().catch(error => toast(error.message)));
   $("dataMode").addEventListener("change", () => saveSettings().catch(error => toast(error.message)));
+  updateViewerTransform();
   try {
     await loadConfig();
     S.devices = readDevices();
