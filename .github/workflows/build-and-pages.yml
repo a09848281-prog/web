@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase, rebuild-v3.9-camera-controls-stability]
+    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase, rebuild-v3.9-camera-controls-stability, rebuild-v3.10-audio-pickup-ptt]
     paths:
       - "android/**"
       - "web/**"
