@@ -225,6 +225,9 @@ function setControlsEnabled(enabled) {
   $("disconnect").disabled = !S.pc;
   $("camera").disabled = !enabled || !S.pc;
   $("ptt").disabled = !S.pc;
+  $("snapshot").disabled = !S.pc;
+  $("refreshStatus").disabled = !S.pc;
+  if (!S.pc) updateFlashlightButton(false, false);
 }
 function selectDevice(device) {
   if (S.pc && S.device && S.device.deviceId !== device.deviceId) {
@@ -585,7 +588,7 @@ function handleControlMessage(raw) {
   if (data.type === "command_result") {
     if (data.name === "flashlight") {
       if (data.success) {
-        S.flashlightOn = !!(data.enabled ?? S.flashlightOn);
+        S.flashlightOn = !!(data.payload && data.payload.enabled);
         toast(S.flashlightOn ? "AndroidライトをONにしました。" : "AndroidライトをOFFにしました。");
         requestDeviceStatus().catch(() => {});
       } else {
