@@ -67,7 +67,7 @@ jobs:
           if (!android.includes('ACTION_STOP') || !android.includes('addAction(') ||
               !android.includes('stopMonitoringNow(') ||
               !android.includes('Offer handling failed; keep foreground service alive') ||
-              !rtc.includes('retrying 960x540') ||
+              !rtc.includes('Capture format failed:') ||
               !main.includes('refreshMonitoringButtons') ||
               !main.includes('GASでペアリング確認済み')) {
             throw new Error('Background stop action, RTC recovery, or server-verified pairing state is missing.');
