@@ -890,12 +890,34 @@ async function saveSettings() {
     connectedInterval: Number($("connectedInterval").value),
     idleInterval: Number($("idleInterval").value)
   };
+
+  // Apply changes over the active peer before starting a background GAS write.
+  const direct = !!(S.controlChannel && S.controlChannel.readyState === "open");
+  if (direct) {
+    await sendControlCommand("quality", {
+      quality: settings.quality,
+      dataMode: settings.dataMode
+    });
+    await sendControlCommand("location_settings", settings);
+    toast("Androidに設定を反映しました。GASへ保存中…");
+    api("save_settings", {
+      controllerToken: S.device.controllerToken,
+      deviceId: S.device.deviceId,
+      settings
+    }).then(() => toast("設定を反映し、GASにも保存しました。"))
+      .catch(error => toast("Androidには反映済みですが、GAS保存に失敗しました：" + error.message));
+    return;
+  }
+
   await api("save_settings", {
     controllerToken: S.device.controllerToken,
     deviceId: S.device.deviceId,
     settings
   });
-  await sendControlCommand("quality", { quality: settings.quality, dataMode: settings.dataMode });
+  await sendControlCommand("quality", {
+    quality: settings.quality,
+    dataMode: settings.dataMode
+  });
   await sendControlCommand("location_settings", settings);
   toast("設定を保存しました。");
 }
@@ -1106,7 +1128,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
   $("copyLocation").addEventListener("click", copyCoordinates);
-  const savedVolume = Number(localStorage.getItem("rc_receive_volume_v1"));
+  const storedVolume = localStorage.getItem("rc_receive_volume_v1");
+  const savedVolume = storedVolume === null ? 70 : Number(storedVolume);
   setReceiveVolume(Number.isFinite(savedVolume) ? savedVolume : 70, false);
   $("volume").addEventListener("input", event => setReceiveVolume(Number(event.target.value), true));
   $("camera").addEventListener("change", event => {
