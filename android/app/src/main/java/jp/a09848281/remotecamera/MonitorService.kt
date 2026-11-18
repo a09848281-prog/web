@@ -288,6 +288,7 @@ class MonitorService : Service() {
         locationJob = null
         rtc?.dispose()
         rtc = null
+        rtcAudioPickupMode = null
         prefs.edit().putBoolean("monitoringEnabled", false).apply()
         releaseCpuWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -326,6 +327,7 @@ class MonitorService : Service() {
                         // A controller can revoke pairing remotely. Stop media immediately on the next poll.
                         rtc?.dispose()
                         rtc = null
+                        rtcAudioPickupMode = null
                         val pairingCodeActive = response.optBoolean("pairingCodeActive", false)
                         if (!pairingCodeActive || System.currentTimeMillis() - lastCodeRefresh > 8 * 60 * 1000L) {
                             refreshCode()
