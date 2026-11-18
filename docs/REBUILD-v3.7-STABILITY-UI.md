@@ -26,8 +26,10 @@ Previous web reconnects stopped the iPad microphone stream and called `getUserMe
 - Preserve the authorized microphone MediaStream during automatic reconnect.
 - Stop microphone tracks on explicit manual disconnect.
 - Reconnect on WebRTC failed/disconnected/closed states, network restoration, and page visibility restoration.
+- Detect three consecutive stats intervals with no decoded video frames and force a bounded reconnect even if the ICE state still says connected.
 - Time out unanswered Android offers after 45 seconds.
 - Limit reconnect attempts; reset the retry budget only after 30 seconds of stable connection.
+- Manual disconnect remains final and blocks both connection-state and frozen-frame recovery timers.
 - Block device switching while a session is active.
 
 ### 1.3 Stale Android sessions and duplicate offers
