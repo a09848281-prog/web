@@ -1,7 +1,14 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location]
+    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui]
+    paths:
+      - "android/**"
+      - "web/**"
+      - "gas/**"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [rebuild-v3.6-wide-stable-location]
     paths:
       - "android/**"
       - "web/**"
@@ -100,14 +107,33 @@ jobs:
               !main.includes('カメラとマイクの権限は必須、位置情報は任意です')) {
             throw new Error('Optional location permission or dual-provider location acquisition is missing.');
           }
-          for (const id of ['fullscreen','fitMode','viewerZoom','connectionMetrics','sessionDuration','mapFollow','copyLocation']) {
+          if (!rtc.includes('Never reconfigure Camera2 in the middle of a live WebRTC session') ||
+              !rtc.includes('Close stale sessions after') ||
+              !rtc.includes('onCameraDisconnected()') ||
+              !rtc.includes('onCameraFreezed(')) {
+            throw new Error('Live quality update, stale peer cleanup, or camera fault diagnostics are missing.');
+          }
+          if (!main.includes('keepAwakeSwitch') ||
+              !main.includes('EXTRA_KEEP_CPU_AWAKE') ||
+              !android.includes('PowerManager.PARTIAL_WAKE_LOCK') ||
+              !android.includes('releaseCpuWakeLock()')) {
+            throw new Error('Optional screen-off CPU wake lock control is missing.');
+          }
+          for (const id of ['fullscreen','fitMode','viewerZoom','connectionMetrics','sessionDuration','mapFollow','copyLocation','connect','disconnect']) {
             if (!ids.includes(id) || !app.includes(id)) throw new Error('Missing v3.6 viewer feature: ' + id);
           }
           if (!app.includes('scheduleReconnect') || !app.includes('collectConnectionStats') ||
-              !app.includes('stun:stun.l.google.com:19302')) {
-            throw new Error('Web reconnect, diagnostics or STUN feature is missing.');
+              !app.includes('stun:stun.l.google.com:19302') ||
+              !app.includes('Reuse the already-authorized microphone stream') ||
+              !app.includes('visibilitychange') || !app.includes('45秒以内にAndroidから応答がありません')) {
+            throw new Error('Web reconnect, mic reuse, resume recovery, diagnostics or STUN feature is missing.');
           }
-          console.log('v3.6: wide camera selection, 16:9 profiles, STUN, optional dual-provider location, auto-reconnect, diagnostics and viewer controls OK.');
+          if (!app.includes('async function disconnect(sendCommand = true, preserveMic = false)') ||
+              !app.includes('if (preserveMic)') ||
+              !app.includes('S.manualDisconnect = true')) {
+            throw new Error('Automatic reconnect must preserve the local microphone while manual disconnect stops it.');
+          }
+          console.log('v3.7: wide camera selection, smooth live quality changes, camera recovery, STUN, location recovery, mic-preserving reconnect and responsive controls OK.');
           NODE
       - name: Build Android debug APK
         working-directory: android
@@ -131,7 +157,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-camera-debug-apk-v3.6
+          name: remote-camera-debug-apk-v3.7
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
