@@ -37,6 +37,7 @@ class RtcEngine(
     private var captureWidth = 1280
     private var captureHeight = 720
     private var captureFps = 24
+    private val cameraRecoveryScheduled = AtomicBoolean(false)
 
     private data class VideoProfile(
         val width: Int, val height: Int, val fps: Int, val bitrate: Int
@@ -98,17 +99,20 @@ class RtcEngine(
         object : CameraVideoCapturer.CameraEventsHandler {
             override fun onCameraError(errorDescription: String) {
                 Log.e("RemoteCameraRTC", "Camera error: " + errorDescription)
-                onState("Androidカメラエラー：" + errorDescription)
+                onState("Androidカメラエラー：" + errorDescription + "。カメラ再取得を試みます")
+                scheduleCameraRecovery("camera error")
             }
 
             override fun onCameraDisconnected() {
                 Log.w("RemoteCameraRTC", "Camera disconnected by Android camera service or a higher-priority app")
-                onState("カメラがAndroid側で一時切断されました。他のカメラアプリを閉じて再接続してください")
+                onState("カメラがAndroid側で一時切断されました。カメラの再取得を試みます")
+                scheduleCameraRecovery("camera disconnected")
             }
 
             override fun onCameraFreezed(errorDescription: String) {
                 Log.e("RemoteCameraRTC", "Camera frame freeze: " + errorDescription)
-                onState("カメラ映像が停止しました：" + errorDescription)
+                onState("カメラ映像が停止しました：" + errorDescription + "。再取得を試みます")
+                scheduleCameraRecovery("camera freeze")
             }
 
             override fun onCameraOpening(cameraName: String) {
@@ -123,6 +127,70 @@ class RtcEngine(
                 Log.i("RemoteCameraRTC", "Camera closed")
             }
         }
+
+    /**
+     * Re-open the existing Camera2 capturer after Android or a higher-priority
+     * app temporarily takes the camera. Keep the VideoSource/VideoTrack alive
+     * so the current PeerConnection does not need a full renegotiation.
+     */
+    private fun scheduleCameraRecovery(reason: String) {
+        if (peers.isEmpty() || !cameraRecoveryScheduled.compareAndSet(false, true)) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                for (attempt in 1..5) {
+                    delay(1200L * attempt)
+                    val restored = synchronized(this@RtcEngine) {
+                        if (peers.isEmpty() || videoSource == null || helper == null) {
+                            return@synchronized null
+                        }
+                        try {
+                            val previous = capturer
+                            capturer = null
+                            try { previous?.stopCapture() } catch (e: Exception) {
+                                Log.w("RemoteCameraRTC", "Previous capturer was already stopped", e)
+                            }
+                            try { previous?.dispose() } catch (_: Exception) {}
+
+                            val enumerator = Camera2Enumerator(context)
+                            val names = enumerator.deviceNames
+                            val selected = if (frontCamera) {
+                                names.firstOrNull { enumerator.isFrontFacing(it) }
+                                    ?: chooseWidestBackCamera(enumerator, names)
+                            } else {
+                                chooseWidestBackCamera(enumerator, names)
+                            }
+                            val replacement = enumerator.createCapturer(
+                                selected, createCameraEventsHandler()
+                            ) ?: error("再取得できるカメラがありません。")
+                            try {
+                                replacement.initialize(
+                                    helper, context.applicationContext, videoSource!!.capturerObserver
+                                )
+                                replacement.startCapture(captureWidth, captureHeight, captureFps)
+                                capturer = replacement
+                            } catch (e: Exception) {
+                                try { replacement.dispose() } catch (_: Exception) {}
+                                throw e
+                            }
+                            true
+                        } catch (e: Exception) {
+                            Log.w("RemoteCameraRTC", "Camera recovery attempt " + attempt + " failed", e)
+                            false
+                        }
+                    }
+                    if (restored == null) return@launch
+                    if (restored == true) {
+                        onState("カメラを再取得しました。映像接続を継続します")
+                        return@launch
+                    }
+                    onState("カメラ再取得を試行中（" + attempt + "/5）")
+                }
+                onState("カメラを再取得できません。他のカメラアプリを閉じてから再接続してください")
+            } finally {
+                cameraRecoveryScheduled.set(false)
+            }
+        }
+    }
 
     @Synchronized
     private fun ensureMedia() {
