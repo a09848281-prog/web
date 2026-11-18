@@ -28,6 +28,7 @@ const S = {
   statsTimer: null,
   statsBusy: false,
   previousStats: null,
+  statsFreezeCount: 0,
   sessionTimer: null,
   connectedAt: 0
 };
@@ -286,6 +287,7 @@ function stopStatsMonitor() {
   if (S.statsTimer) clearInterval(S.statsTimer);
   S.statsTimer = null;
   S.previousStats = null;
+  S.statsFreezeCount = 0;
   S.statsBusy = false;
   if ($("connectionMetrics")) $("connectionMetrics").textContent = "通信状態：未接続";
 }
@@ -323,7 +325,18 @@ async function collectConnectionStats(pc) {
     }
     const elapsed = Math.max(0.2, (current.timestamp - previous.timestamp) / 1000);
     const bitrate = Math.max(0, (current.bytes - previous.bytes) * 8 / elapsed / 1000);
-    const fps = Math.max(0, (current.frames - previous.frames) / elapsed);
+    const decodedDelta = Math.max(0, current.frames - previous.frames);
+    const fps = decodedDelta / elapsed;
+    if (decodedDelta < 1) {
+      S.statsFreezeCount += 1;
+    } else {
+      S.statsFreezeCount = 0;
+    }
+    if (S.statsFreezeCount >= 3 && pc.connectionState === "connected") {
+      toast("映像フレームが止まっています。接続を再構築します。");
+      scheduleReconnect(pc, true);
+      return;
+    }
     const receivedDelta = Math.max(0, current.packetsReceived - previous.packetsReceived);
     const lostDelta = Math.max(0, current.packetsLost - previous.packetsLost);
     const loss = receivedDelta + lostDelta > 0 ? lostDelta / (receivedDelta + lostDelta) * 100 : 0;
@@ -347,7 +360,7 @@ function startStatsMonitor(pc) {
   S.statsTimer = setInterval(() => collectConnectionStats(pc), 2500);
 }
 
-function scheduleReconnect(failedPeer) {
+function scheduleReconnect(failedPeer, forceReconnect = false) {
   if (S.manualDisconnect || !S.device || S.reconnectTimer) return;
   const waits = [2500, 5000, 10000, 15000, 20000];
   if (S.reconnectAttempts >= waits.length) {
@@ -361,7 +374,7 @@ function scheduleReconnect(failedPeer) {
   S.reconnectTimer = setTimeout(async () => {
     S.reconnectTimer = null;
     if (S.manualDisconnect || !S.device || (failedPeer && S.pc !== failedPeer)) return;
-    if (failedPeer && ["connected", "connecting"].includes(failedPeer.connectionState)) return;
+    if (failedPeer && failedPeer.connectionState === "connected" && !forceReconnect) return;
     S.reconnectAttempts = attempt;
     await disconnect(false, true);
     await connect(true);
