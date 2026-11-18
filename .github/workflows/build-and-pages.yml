@@ -232,7 +232,30 @@ jobs:
               !gas.includes('"flashlight"') || !gas.includes('4.1.0')) {
             throw new Error('v3.9 GAS compatibility, saved capture settings or flashlight command is missing.');
           }
-          console.log('v3.9 aspect/FPS settings, audio input route, flash control, five viewer features, fullscreen restoration, and Firebase-free dependencies OK.');
+          if (!main.includes('audioPickupModeSpinner') ||
+              !main.includes('audioPickupModeKeys') ||
+              !main.includes('ScrollView(this)') ||
+              !android.includes('EXTRA_AUDIO_PICKUP_MODE') ||
+              !android.includes('audioPickupMode') ||
+              !rtc.includes('audioConstraintsForPickupMode') ||
+              !rtc.includes('googEchoCancellation') ||
+              !rtc.includes('googNoiseSuppression') ||
+              !rtc.includes('MediaRecorder.AudioSource.VOICE_COMMUNICATION') ||
+              !rtc.includes('AudioManager.MODE_IN_COMMUNICATION')) {
+            throw new Error('v4.1 Android ambient/balanced/voice microphone preset settings are incomplete.');
+          }
+          for (const id of ['pttLock','remoteMute','audioLevel','audioLevelText']) {
+            if (!ids.includes(id)) throw new Error('Missing v4.1 audio control: ' + id);
+          }
+          if (!app.includes('setPointerCapture') ||
+              !app.includes('180000') ||
+              !app.includes('function startAudioMeter') ||
+              !app.includes('remoteAudioMuted') ||
+              !app.includes('pttSafetyTimer')) {
+            throw new Error('v4.1 push-to-talk safety, audio meter or receive mute is incomplete.');
+          }
+          console.log('v4.1 mic presets, connection-safe preset changes, PTT safety, keyboard input and audio diagnostics OK.');
+          console.log('v3.9 inherited camera, fullscreen, flashlight, background standby and WebRTC features OK.');
           NODE
       - name: Verify v4.1 Android and Web version alignment
         run: |
@@ -240,11 +263,13 @@ jobs:
           const fs = require('fs');
           const gradle = fs.readFileSync('android/app/build.gradle.kts', 'utf8');
           const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
+          const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
           const workflow = fs.readFileSync('.github/workflows/build-and-pages.yml', 'utf8');
           if (!/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v41preview"/.test(gradle) ||
               !/versionCode\s*=\s*410/.test(gradle) ||
               !/versionName\s*=\s*"4\.1\.0"/.test(gradle) ||
               config.appVersion !== '4.1.0' ||
+              !manifest.includes('android:label="Remote Camera 4.1 Preview"') ||
               !workflow.includes('name: remote-camera-debug-apk-v4.1')) {
             throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v4.1.0.');
           }
