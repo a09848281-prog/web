@@ -44,6 +44,7 @@ const S = {
   remoteAudioSource: null,
   remoteVideoStream: null,
   receiveVolume: 70,
+  androidSpeakerVolume: 70,
   captureRatio: "16:9",
   fpsLimit: 24,
   appliedAdaptiveMode: "standard",
@@ -232,6 +233,7 @@ function setControlsEnabled(enabled) {
   $("ptt").disabled = !S.pc;
   $("pttLock").disabled = !S.pc;
   $("remoteMute").disabled = !S.pc;
+  $("androidSpeakerVolume").disabled = !S.pc;
   $("snapshot").disabled = !S.pc;
   $("refreshStatus").disabled = !S.pc;
   if (!S.pc) updateFlashlightButton(false, false);
@@ -961,6 +963,9 @@ async function connect(automatic = false) {
       status(state === "connected" ? "通信接続済み" : state, state === "connected");
       $("streamState").textContent = state === "connected" ? "通信チャネル接続中" : "接続処理中";
       if (state === "connected") {
+        sendControlCommand("volume", { percent: S.androidSpeakerVolume }).catch(error => {
+          console.debug("Android speaker volume sync failed", error);
+        });
         if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
         S.reconnectTimer = null;
         if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
@@ -1147,6 +1152,7 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   $("ptt").disabled = true;
   $("pttLock").disabled = true;
   $("remoteMute").disabled = true;
+  $("androidSpeakerVolume").disabled = true;
   S.pttLocked = false;
   S.remoteAudioMuted = false;
   $("pttLock").textContent = "送話ロック OFF";
@@ -1513,6 +1519,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   const savedVolume = storedVolume === null ? 70 : Number(storedVolume);
   setReceiveVolume(Number.isFinite(savedVolume) ? savedVolume : 70, false);
   $("volume").addEventListener("input", event => setReceiveVolume(Number(event.target.value), true));
+  const storedAndroidSpeakerVolume = localStorage.getItem("rc_android_speaker_volume_v1");
+  const savedAndroidSpeakerVolume = storedAndroidSpeakerVolume === null ? 70 : Number(storedAndroidSpeakerVolume);
+  S.androidSpeakerVolume = Number.isFinite(savedAndroidSpeakerVolume)
+    ? Math.max(0, Math.min(100, savedAndroidSpeakerVolume)) : 70;
+  $("androidSpeakerVolume").value = String(S.androidSpeakerVolume);
+  $("androidSpeakerVolumeValue").textContent = S.androidSpeakerVolume + "%";
+  $("androidSpeakerVolume").addEventListener("input", event => {
+    S.androidSpeakerVolume = Math.max(0, Math.min(100, Number(event.target.value) || 0));
+    $("androidSpeakerVolumeValue").textContent = S.androidSpeakerVolume + "%";
+    try { localStorage.setItem("rc_android_speaker_volume_v1", String(S.androidSpeakerVolume)); } catch (_) {}
+  });
+  $("androidSpeakerVolume").addEventListener("change", () => {
+    if (!S.pc) return toast("Androidスピーカー音量は接続後に反映できます。");
+    sendControlCommand("volume", { percent: S.androidSpeakerVolume })
+      .then(() => toast("Android側の送話再生音量を変更しました。"))
+      .catch(error => toast("Android音量変更失敗：" + error.message));
+  });
   $("camera").addEventListener("change", event => {
     command("camera", { facing: event.target.value }).catch(error => toast(error.message));
   });
