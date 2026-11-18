@@ -1,20 +1,20 @@
 # Remote Camera v3.8.0 Build Report
 
 - Branch: `rebuild-v3.8-realtime-stability-no-firebase`
-- Build commit: `4780ec892ad9cb1dd3e4c1dd1f0a3c2ada96841b`
+- Build commit: `e7aab64280c103ed797f1731b383651184a1ac2`
 - Android application ID: `jp.a09848281.remotecamera`
 - Version name: `3.8.0`
 - Version code: `308`
-- Workflow: [Build Android APK #111](https://github.com/a09848281-prog/web/actions/runs/44298257614)
+- Workflow: [Build Android APK #112](https://github.com/a09848281-prog/web/actions/runs/44299418106)
 - Workflow run ID: `44298257614`
 - Artifact: `remote-camera-debug-apk-v3.8`
-- Artifact ID: `14423832827`
+- Artifact ID: `14423634964`
 - Artifact status: successful, not expired
-- Artifact expiry: 2026-12-18 11:51 UTC
-- Artifact ZIP size: `26,085,659` bytes
+- Artifact expiry: 2026-12-18 11:58 UTC
+- Artifact ZIP size: `26,085,658` bytes
 - APK size: `50,793,405` bytes
-- ZIP SHA-256: `1d4321e30d37aacdde2e678f87aaea80e0544639e740429f6a59323b3a431688`
-- APK SHA-256: `6da1de577f5b45911f0cf1b761fa59c45330cd2c39d73a50b4f623770e88f053`
+- ZIP SHA-256: `b94844d26a2c70e06033a9eacc4fec2bee8a6140c88bae01ebcbc007c6084de3`
+- APK SHA-256: `7ffa7e7620c54d293ae3afe766e6b095e81ec526845e5c6e8be6d4404bab643d`
 
 ## Automated verification
 
@@ -35,6 +35,7 @@
 | APK manifest RECORD_AUDIO permission | PASS |
 | Artifact upload | PASS |
 | ZIP integrity test and SHA-256 comparison | PASS |
+| GAS/Web API version mismatch guard | PASS |
 
 ## v3.8 changes
 
@@ -47,7 +48,8 @@
 7. Prefer a cached Android location no older than 60 seconds; otherwise attempt GPS and network provider together, with an 8-second acquisition timeout.
 8. Added bounded retry/backoff for safe Android GAS reads and a 2–15 second poll backoff after transient failures.
 9. Optimized GAS command/signal reads to recent rows, throttled last-seen sheet writes to once per minute, and added server execution timing/API version to responses.
-10. Android wait modes are now 30-second / 6-second / 2-second intervals. Firebase remains unused.
+10. Android wait modes are now 30-second / 6-second / 2-second intervals.
+11. Web startup now compares the configured Web app version with the GAS API version and gives a specific redeployment warning before pairing if they differ. Firebase remains unused.
 
 ## Deployment and test boundaries
 
