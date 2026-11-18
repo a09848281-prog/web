@@ -176,6 +176,10 @@ function setControlsEnabled(enabled) {
   $("ptt").disabled = !S.pc;
 }
 function selectDevice(device) {
+  if (S.pc && S.device && S.device.deviceId !== device.deviceId) {
+    toast("接続中の端末があります。先に切断してから端末を切り替えてください。");
+    return;
+  }
   S.device = device;
   localStorage.setItem(SELECTED_KEY, device.deviceId);
   $("deviceName").textContent = device.deviceName || "Android端末";
@@ -531,7 +535,13 @@ async function connect(automatic = false) {
   }
 }
 async function pollAnswers() {
+  const startedAt = Date.now();
   while (S.pc && S.session && S.device) {
+    if (Date.now() - startedAt > 45000 && S.pc.connectionState !== "connected") {
+      toast("45秒以内にAndroidから応答がありません。接続をやり直します。");
+      scheduleReconnect(S.pc);
+      return;
+    }
     try {
       const result = await api("poll_signals", {
         controllerToken: S.device.controllerToken,
@@ -549,6 +559,10 @@ async function pollAnswers() {
       }
     } catch (error) {
       console.warn("pollAnswers", error);
+      if (S.pc && S.pc.connectionState === "failed") {
+        scheduleReconnect(S.pc);
+        return;
+      }
     }
     await new Promise(resolve => setTimeout(resolve, Number(S.cfg.pollIntervalMs) || 2500));
   }
