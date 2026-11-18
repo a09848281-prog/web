@@ -104,7 +104,7 @@ jobs:
               !android.includes('requestLocationUpdates') ||
               !android.includes('LocationManager.GPS_PROVIDER') ||
               !android.includes('LocationManager.NETWORK_PROVIDER') ||
-              !main.includes('カメラとマイクの権限は必須、位置情報は任意です')) {
+              !main.includes('カメラ・マイクの権限は必須、位置情報は任意です')) {
             throw new Error('Optional location permission or dual-provider location acquisition is missing.');
           }
           if (!rtc.includes('Never reconfigure Camera2 in the middle of a live WebRTC session') ||
