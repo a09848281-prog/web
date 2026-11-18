@@ -130,7 +130,7 @@ class RtcEngine(
             previousAudioMode = manager.mode
             audioModeChanged = true
         }
-        manager.mode = AudioManager.MODE_IN_COMMUNICATION
+        manager.mode = AudioManager.MODE_NORMAL
     }
 
     private fun restoreAudioMode() {
@@ -284,9 +284,10 @@ class RtcEngine(
             )
             egl = EglBase.create()
             audioDeviceModule = JavaAudioDeviceModule.builder(context.applicationContext)
-                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
-                .setUseHardwareAcousticEchoCanceler(true)
-                .setUseHardwareNoiseSuppressor(true)
+                .setAudioSource(MediaRecorder.AudioSource.MIC)
+                // Ambient pickup preset: do not use voice-call DSP that can suppress quiet surroundings.
+                .setUseHardwareAcousticEchoCanceler(false)
+                .setUseHardwareNoiseSuppressor(false)
                 .createAudioDeviceModule()
             factory = PeerConnectionFactory.builder()
                 .setAudioDeviceModule(audioDeviceModule!!)
