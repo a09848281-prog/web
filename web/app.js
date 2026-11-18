@@ -1151,7 +1151,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderDevices();
     try {
       const health = await api("health");
-      if (!health.databaseReady) {
+      const expectedApiVersion = String(S.cfg.appVersion || "");
+      const actualApiVersion = String(health.apiVersion || health.version || "");
+      if (expectedApiVersion && actualApiVersion !== expectedApiVersion) {
+        $("pair").disabled = true;
+        $("pairQuick").disabled = true;
+        setControlsEnabled(false);
+        status("GASバージョン不一致");
+        toast("Webはv" + expectedApiVersion + "、GASはv" +
+          (actualApiVersion || "旧版／未対応") +
+          "です。Apps ScriptのCode.gsをv" + expectedApiVersion +
+          "へ更新し、新しいバージョンとして再デプロイしてください。");
+      } else if (!health.databaseReady) {
         $("pair").disabled = true;
         $("pairQuick").disabled = true;
         setControlsEnabled(false);
