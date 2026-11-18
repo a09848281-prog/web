@@ -11,6 +11,7 @@ import org.json.JSONObject
 import org.webrtc.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.atan
 
 class RtcEngine(
     private val context: Context,
@@ -42,19 +43,55 @@ class RtcEngine(
     )
 
     private fun profileFor(quality: String, dataMode: String): VideoProfile {
-        // Conservative default for mid-range Android 13 devices.
+        // Use 16:9 capture modes. The old 640x480 default caused a 4:3 crop
+        // and quality="720" accidentally fell through to VGA.
         val base = when (quality) {
-            "360" -> VideoProfile(640, 360, 15, 350000)
-            "480" -> VideoProfile(640, 480, 15, 550000)
+            "360" -> VideoProfile(640, 360, 15, 420000)
+            "480" -> VideoProfile(854, 480, 20, 650000)
             "1080" -> VideoProfile(1920, 1080, 24, 1800000)
-            else -> VideoProfile(640, 480, 15, 550000)
+            "auto" -> VideoProfile(1280, 720, 20, 850000)
+            else -> VideoProfile(1280, 720, 24, 1000000)
         }
         return when (dataMode) {
-            "ultra" -> VideoProfile(640, 360, 10, 280000)
-            "save" -> VideoProfile(640, 360, 15, 550000)
-            "high" -> base.copy(fps = 30, bitrate = 2400000)
+            "ultra" -> VideoProfile(640, 360, 10, 250000)
+            "save" -> VideoProfile(854, 480, 15, 450000)
+            "auto" -> base.copy(fps = minOf(base.fps, 20), bitrate = minOf(base.bitrate, 800000))
+            "high" -> base.copy(fps = minOf(base.fps, 30), bitrate = minOf(base.bitrate, 2000000))
             else -> base
         }
+    }
+
+    /**
+     * Prefer the rear camera with the widest reported horizontal field of view.
+     * Some manufacturers expose only one logical rear camera; in that case we
+     * fall back to Camera2Enumerator's first rear-facing camera.
+     */
+    private fun chooseWidestBackCamera(enumerator: Camera2Enumerator, names: Array<String>): String {
+        val backNames = names.filter { enumerator.isBackFacing(it) }
+        if (backNames.isEmpty()) {
+            return names.firstOrNull() ?: error("利用できるカメラがありません。")
+        }
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+        val best = backNames.mapNotNull { name ->
+            try {
+                val characteristics = manager.getCameraCharacteristics(name)
+                val sensor = characteristics.get(android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+                val focal = characteristics.get(android.hardware.camera2.CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                    ?.filter { it > 0f }?.minOrNull()
+                val fieldOfView = if (sensor != null && focal != null) {
+                    2.0 * atan(sensor.width.toDouble() / (2.0 * focal.toDouble()))
+                } else {
+                    0.0
+                }
+                name to fieldOfView
+            } catch (e: Exception) {
+                Log.w("RemoteCameraRTC", "Could not inspect camera " + name, e)
+                null
+            }
+        }.maxByOrNull { it.second }
+        val selected = best?.first ?: backNames.first()
+        Log.i("RemoteCameraRTC", "Selected widest available rear camera: " + selected + ", horizontalFov=" + best?.second)
+        return selected
     }
 
     @Synchronized
@@ -73,10 +110,7 @@ class RtcEngine(
         videoSource = factory!!.createVideoSource(false)
         val enumerator = Camera2Enumerator(context)
         val names = enumerator.deviceNames
-        val selected = names.firstOrNull { enumerator.isBackFacing(it) }
-            ?: names.firstOrNull { enumerator.isFrontFacing(it) }
-            ?: names.firstOrNull()
-            ?: error("利用できるカメラがありません。")
+        val selected = chooseWidestBackCamera(enumerator, names)
         frontCamera = enumerator.isFrontFacing(selected)
         capturer = enumerator.createCapturer(selected, null) ?: error("カメラを開けません。")
         helper = SurfaceTextureHelper.create("RemoteCameraCapture", egl!!.eglBaseContext)
@@ -88,14 +122,25 @@ class RtcEngine(
         try {
             capturer!!.startCapture(profile.width, profile.height, profile.fps)
         } catch (first: Exception) {
-            Log.w("RemoteCameraRTC", "Preferred camera format failed; retrying conservative VGA mode", first)
+            Log.w("RemoteCameraRTC", "Preferred 16:9 format failed; retrying 960x540", first)
             try { capturer?.dispose() } catch (_: Exception) {}
             capturer = enumerator.createCapturer(selected, null) ?: throw first
             capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
-            capturer!!.startCapture(640, 480, 15)
-            captureWidth = 640
-            captureHeight = 480
-            captureFps = 15
+            try {
+                capturer!!.startCapture(960, 540, 20)
+                captureWidth = 960
+                captureHeight = 540
+                captureFps = 20
+            } catch (second: Exception) {
+                Log.w("RemoteCameraRTC", "960x540 failed; retrying 640x360", second)
+                try { capturer?.dispose() } catch (_: Exception) {}
+                capturer = enumerator.createCapturer(selected, null) ?: throw second
+                capturer!!.initialize(helper, context.applicationContext, videoSource!!.capturerObserver)
+                capturer!!.startCapture(640, 360, 15)
+                captureWidth = 640
+                captureHeight = 360
+                captureFps = 15
+            }
         }
         videoTrack = factory!!.createVideoTrack("remote-camera-video", videoSource).apply { setEnabled(true) }
         audioSource = factory!!.createAudioSource(MediaConstraints())
@@ -115,7 +160,13 @@ class RtcEngine(
             Log.i("RemoteCameraRTC", "ACCESS_NETWORK_STATE permission verified before WebRTC initialization")
             peers.remove(sessionId)?.close()
             ensureMedia()
-            val config = PeerConnection.RTCConfiguration(emptyList()).apply {
+            // STUN helps peers discover a usable public-facing candidate. It does
+            // not replace TURN, so restrictive networks may still require a relay.
+            val iceServers = listOf(
+                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+                PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+            )
+            val config = PeerConnection.RTCConfiguration(iceServers).apply {
                 sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
                 bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             }
