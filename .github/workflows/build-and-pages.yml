@@ -145,6 +145,21 @@ jobs:
           }
           console.log('v3.7: wide camera selection, smooth live quality changes, camera recovery, frozen-frame detection, STUN, location recovery, mic-preserving reconnect and responsive controls OK.');
           NODE
+      - name: Verify v3.7 Android and Web version alignment
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const gradle = fs.readFileSync('android/app/build.gradle.kts', 'utf8');
+          const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
+          const workflow = fs.readFileSync('.github/workflows/build-and-pages.yml', 'utf8');
+          if (!/versionCode\\s*=\\s*307/.test(gradle) ||
+              !/versionName\\s*=\\s*"3\\.7\\.0"/.test(gradle) ||
+              config.appVersion !== '3.7.0' ||
+              !workflow.includes('name: remote-camera-debug-apk-v3.7')) {
+            throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v3.7.0.');
+          }
+          console.log('Android 3.7.0 / versionCode 307 / Web 3.7.0 / APK artifact v3.7 are aligned.');
+          NODE
       - name: Build Android debug APK
         working-directory: android
         run: gradle :app:assembleDebug --stacktrace
