@@ -1,5 +1,31 @@
 # Android・iPad 遠隔監視カメラシステム
 
+## v3.9.0 プレビュー（実機テスト前）
+
+作業ブランチ：`rebuild-v3.9-camera-controls-stability`
+Android applicationId：`jp.a09848281.remotecamera.v39preview`
+Web/API version：`3.9.0`
+
+### v3.9で追加・改善
+- Webから画角（16:9 / 4:3 / 1:1 / 9:16）とFPS（15 / 20 / 24 / 30）を指定できます。
+- 画質選択を360p / 480p / 720p / 1080pへ拡張し、標準ビットレートも見直しました。
+- 配信中はFPS・ビットレートを直接変更し、カメラの撮影サイズ変更は次回接続へ延期して映像停止を抑えます。
+- 全画面終了後、同じWebRTC映像ストリームの再生を復帰させる処理を追加しました。
+- AndroidのJavaAudioDeviceModuleと音声ルーティングを明示し、Androidマイク受信状態をWebに表示します。
+- Androidアプリ内から待機中の通信量モードを「Web側／超節約／節約／標準／高画質」へ切り替えられます。
+- Androidアプリの設定画面を開いても、Foreground Serviceを停止しない構造を維持します。
+- 新機能5つ：Androidライト操作、PNG静止画保存、画面スリープ防止、自動画質調整、Android電池情報表示。
+- Firebaseは使用していません。
+
+**注意：** 画角・解像度は次回接続時に反映します。Androidのライトはカメラ使用中にOSから制限される機種があります。TURN中継はまだ設定していません。Galaxy A22 5G / Android 13 と iPad Safari の実機テスト前のプレビューです。
+
+手順：
+- [v3.9クイックスタート](docs/QUICKSTART-v3.9.0.md)
+- [GAS v3.9.0再デプロイ](docs/GAS-REDEPLOY-v3.9.0.md)
+- [v3.9機能と制限](docs/FEATURES-v3.9.0.md)
+
+---
+
 ## v3.8 Webプレビュー
 https://a09848281-prog.github.io/web/preview/ （正式版トップページとは別の検証画面）
 
