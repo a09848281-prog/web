@@ -203,7 +203,9 @@ jobs:
             throw new Error('v3.9 browser camera controls, fullscreen playback recovery, adaptive streaming or new features are incomplete.');
           }
           if (!rtc.includes('JavaAudioDeviceModule.builder') ||
-              !rtc.includes('MediaRecorder.AudioSource.VOICE_COMMUNICATION') ||
+              !rtc.includes('MediaRecorder.AudioSource.MIC') ||
+              !rtc.includes('setUseHardwareNoiseSuppressor(false)') ||
+              !rtc.includes('setUseHardwareAcousticEchoCanceler(false') ||
               !rtc.includes('fun setVideoProfile(') ||
               !rtc.includes('fun setFlashlight(') ||
               !rtc.includes('fun sendDeviceStatus(') ||
