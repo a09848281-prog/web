@@ -1,12 +1,12 @@
 # Remote Camera v3.8.0 Build Report
 
 - Branch: `rebuild-v3.8-realtime-stability-no-firebase`
-- Build commit: `e7aab64280c103ed797f1731b383651184a1ac2`
+- Build commit: `e7aab64280c103ed797f1731b3836511842add85`
 - Android application ID: `jp.a09848281.remotecamera`
 - Version name: `3.8.0`
 - Version code: `308`
 - Workflow: [Build Android APK #112](https://github.com/a09848281-prog/web/actions/runs/44299418106)
-- Workflow run ID: `44298257614`
+- Workflow run ID: `44299418106`
 - Artifact: `remote-camera-debug-apk-v3.8`
 - Artifact ID: `14423634964`
 - Artifact status: successful, not expired
