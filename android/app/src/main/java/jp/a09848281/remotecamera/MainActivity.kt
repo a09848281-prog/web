@@ -7,8 +7,12 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.Spinner
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -24,6 +28,11 @@ class MainActivity : Activity() {
     private lateinit var startButton: Button
     private lateinit var refreshCodeButton: Button
     private lateinit var stopButton: Button
+    private lateinit var waitModeSpinner: Spinner
+    private lateinit var remoteCaptureSwitch: Switch
+    private var selectedWaitMode = "standard"
+    private val waitModeKeys = listOf("eco", "standard", "fast")
+    private val waitModeLabels = listOf("省電力：60秒ごとに確認", "標準：15秒ごとに確認", "応答優先：5秒ごとに確認")
     private var gasUrl = ""
     private val prefs by lazy { getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE) }
 
@@ -68,13 +77,60 @@ class MainActivity : Activity() {
             isEnabled = false
             setOnClickListener { stopMonitoring() }
         }
+
+        selectedWaitMode = prefs.getString("waitMode", "standard") ?: "standard"
+        if (selectedWaitMode !in waitModeKeys) selectedWaitMode = "standard"
+
+        remoteCaptureSwitch = Switch(this).apply {
+            text = "Webからカメラ・マイクの起動を許可"
+            isChecked = prefs.getBoolean("remoteCaptureEnabled", true)
+            setOnCheckedChangeListener { _, enabled ->
+                prefs.edit().putBoolean("remoteCaptureEnabled", enabled).apply()
+                applyLocalSettingsToService()
+            }
+        }
+
+        waitModeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                waitModeLabels
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(waitModeKeys.indexOf(selectedWaitMode).coerceAtLeast(0))
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                    val mode = waitModeKeys.getOrElse(position) { "standard" }
+                    if (mode != selectedWaitMode) {
+                        selectedWaitMode = mode
+                        prefs.edit().putString("waitMode", mode).apply()
+                        applyLocalSettingsToService()
+                    }
+                }
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
+        }
+
         root.addView(status)
         root.addView(codeView)
+        root.addView(TextView(this).apply {
+            text = "スマホ側のバックグラウンド設定"
+            textSize = 18f
+            setTextColor(0xFF17243A.toInt())
+            setPadding(0, 18, 0, 6)
+        })
+        root.addView(remoteCaptureSwitch)
+        root.addView(TextView(this).apply {
+            text = "Webからの接続要求を確認する間隔"
+            textSize = 14f
+            setTextColor(0xFF586980.toInt())
+            setPadding(0, 10, 0, 4)
+        })
+        root.addView(waitModeSpinner, LinearLayout.LayoutParams(-1, -2))
         root.addView(refreshCodeButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(startButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(stopButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(TextView(this).apply {
-            text = "開始ボタンを押すと通知欄に待機状態が表示されます。アプリを表示した状態でカメラ・マイクなどの権限を許可してから待機を開始してください。強制停止・再起動・権限取消後の自動復帰は保証されません。"
+            text = "アプリ画面で監視待機を開始すると、常時通知を表示してWebからの接続要求を待ち受けます。待機中は撮影・録音しません。Webからの起動を許可した場合、開始済みの待機サービスが動作している間は画面ロック後も接続を試みます。撮影・録音中はAndroidのプライバシー表示と通知に状態が出ます。強制停止・端末再起動・権限取消・省電力制御後の動作は保証されません。"
             textSize = 13f
             setTextColor(0xFF66758B.toInt())
             setPadding(0, 22, 0, 0)
@@ -109,6 +165,11 @@ class MainActivity : Activity() {
     }
 
     private fun requestStart() {
+        selectedWaitMode = waitModeKeys.getOrElse(waitModeSpinner.selectedItemPosition) { "standard" }
+        prefs.edit()
+            .putString("waitMode", selectedWaitMode)
+            .putBoolean("remoteCaptureEnabled", remoteCaptureSwitch.isChecked)
+            .apply()
         val requested = mutableListOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,
@@ -151,12 +212,32 @@ class MainActivity : Activity() {
         try {
             ContextCompat.startForegroundService(this, intent)
             prefs.edit().putBoolean("monitoringEnabled", true).apply()
-            status.text = "監視待機を開始しました。通知欄からも停止できます。"
+            status.text = "監視待機を開始しました（${waitModeDescription()}）。通知欄からも停止できます。"
             refreshMonitoringButtons()
         } catch (e: Exception) {
             prefs.edit().putBoolean("monitoringEnabled", false).apply()
             status.text = "待機開始エラー：" + (e.message ?: "開始できませんでした")
             refreshMonitoringButtons()
+        }
+    }
+
+    private fun waitModeDescription(): String = when (selectedWaitMode) {
+        "eco" -> "省電力・60秒間隔"
+        "fast" -> "応答優先・5秒間隔"
+        else -> "標準・15秒間隔"
+    }
+
+    private fun applyLocalSettingsToService() {
+        if (!prefs.getBoolean("monitoringEnabled", false)) return
+        val intent = Intent(this, MonitorService::class.java).apply {
+            action = MonitorService.ACTION_UPDATE_LOCAL_SETTINGS
+            putExtra(MonitorService.EXTRA_WAIT_MODE, selectedWaitMode)
+            putExtra(MonitorService.EXTRA_REMOTE_CAPTURE_ENABLED, remoteCaptureSwitch.isChecked)
+        }
+        try {
+            startService(intent)
+        } catch (e: Exception) {
+            status.text = "設定反映エラー：" + (e.message ?: "サービスへ反映できませんでした")
         }
     }
 
