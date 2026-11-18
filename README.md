@@ -1,5 +1,8 @@
 # Android・iPad 遠隔監視カメラシステム
 
+## v3.8 Webプレビュー
+https://a09848281-prog.github.io/web/preview/ （正式版トップページとは別の検証画面）
+
 ## v3.8.0 リアルタイム安定性改善ブランチ
 作業ブランチ：`rebuild-v3.8-realtime-stability-no-firebase`
 検証対象：Android 13 / iPad Safari / Firebase非使用
@@ -62,6 +65,7 @@ Firebase非使用・GAS／GitHub／Googleスプレッドシート構成の個人
 - [元仕様書 v3.0](docs/Android-iPad-Remote-Surveillance-Camera-Spec-v3.0.md)
 - [アカウント廃止・ペアリング方式 v3.2](docs/PAIRING-ONLY-DESIGN-v3.1.md)
 - [セットアップ手順](docs/QUICKSTART.md)
+- [GAS v3.8.0再デプロイ手順](docs/GAS-REDEPLOY-v3.8.0.md)
 - [実装状況](docs/IMPLEMENTATION-STATUS.md)
 - [ビルド検証結果 v3.8.0（成功）](docs/BUILD-REPORT-v3.8.0.md)
 - [旧ビルド検証結果 v3.7.0](docs/BUILD-REPORT-v3.7.0.md)
