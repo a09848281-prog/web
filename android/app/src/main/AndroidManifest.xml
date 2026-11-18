@@ -3,6 +3,7 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <!-- Explicit network access for GAS signaling and WebRTC. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required by WebRTC NetworkMonitor before it queries active network state. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CAMERA" />
