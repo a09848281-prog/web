@@ -819,6 +819,7 @@ document.addEventListener("visibilitychange", () => {
 document.addEventListener("DOMContentLoaded", async () => {
   $("refresh").addEventListener("click", refreshDeviceList);
   $("pair").addEventListener("click", () => $("pairDialog").showModal());
+  $("pairQuick").addEventListener("click", () => $("pair").click());
   $("unpair").addEventListener("click", () => unpairSelectedDevice());
   $("claim").addEventListener("click", claimDevice);
   $("connect").addEventListener("click", connect);
