@@ -1,20 +1,20 @@
 # Remote Camera v3.8.0 Build Report
 
 - Branch: `rebuild-v3.8-realtime-stability-no-firebase`
-- Build commit: `e7aab64280c103ed797f1731b3836511842add85`
+- Build commit: `ec5e31fd251652bd64b04ff886fe8969512631cb`
 - Android application ID: `jp.a09848281.remotecamera`
 - Version name: `3.8.0`
 - Version code: `308`
-- Workflow: [Build Android APK #112](https://github.com/a09848281-prog/web/actions/runs/44299418106)
+- Workflow: [Build Android APK #116](https://github.com/a09848281-prog/web/actions/runs/44299770829)
 - Workflow run ID: `44299418106`
 - Artifact: `remote-camera-debug-apk-v3.8`
-- Artifact ID: `14423634964`
+- Artifact ID: `14425596169`
 - Artifact status: successful, not expired
-- Artifact expiry: 2026-12-18 11:58 UTC
-- Artifact ZIP size: `26,085,658` bytes
+- Artifact expiry: 2026-12-18 12:01 UTC
+- Artifact ZIP size: `26,085,622` bytes
 - APK size: `50,793,405` bytes
-- ZIP SHA-256: `b94844d26a2c70e06033a9eacc4fec2bee8a6140c88bae01ebcbc007c6084de3`
-- APK SHA-256: `7ffa7e7620c54d293ae3afe766e6b095e81ec526845e5c6e8be6d4404bab643d`
+- ZIP SHA-256: `a424d56fe3430dc2f0afed5d359210300e982570d12903e89eac76c3e562eabf`
+- APK SHA-256: `e5d60001008c9006b4849b0a9d42b7c4a98eb1ba7ac885692c9ac0bf571bb4c8`
 - Preview URL: https://a09848281-prog.github.io/web/preview/
 - GitHub Pages deployment: [run 44300276881](https://github.com/a09848281-prog/web/actions/runs/44300276881), successful
 - Main branch source/CI validation of the preview-only web assets: [run 44300276804](https://github.com/a09848281-prog/web/actions/runs/44300276804), successful
