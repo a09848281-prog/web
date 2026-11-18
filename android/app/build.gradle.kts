@@ -6,11 +6,11 @@ android {
     namespace = "jp.a09848281.remotecamera"
     compileSdk = 35
     defaultConfig {
-        applicationId = "jp.a09848281.remotecamera.v39preview"
+        applicationId = "jp.a09848281.remotecamera.v40preview"
         minSdk = 26
         targetSdk = 35
-        versionCode = 309
-        versionName = "3.9.0"
+        versionCode = 400
+        versionName = "4.0.0"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
