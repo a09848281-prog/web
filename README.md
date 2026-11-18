@@ -21,7 +21,7 @@
 - 待機中は撮影・録音せず、接続中は通知とAndroidプライバシー表示を維持します。
 - APKビルド後に、実際のAPK内にネットワーク・カメラ・マイク権限が含まれるかCIで検査します。
 
-v3.7.0の実機確認は未完了です。GitHub ActionsのGradleビルド成功後、Galaxy A22 5G / Android 13でカメラ復旧・画質変更・位置情報・ロック画面・長時間待機を確認してください。OSの強制停止・端末再起動・権限取消後の自動起動は保証できません。
+v3.7.0のAndroid debug APKはGitHub Actionsでビルド・APK権限検査まで成功しています。ビルド記録は [BUILD-REPORT-v3.7.0.md](docs/BUILD-REPORT-v3.7.0.md) を参照してください。実機確認は未完了です。Galaxy A22 5G / Android 13でカメラ復旧・画質変更・位置情報・ロック画面・長時間待機を確認してください。OSの強制停止・端末再起動・権限取消後の自動起動は保証できません。
 
 
 Firebase非使用・GAS／GitHub／Googleスプレッドシート構成の個人利用プロジェクトです。
@@ -44,7 +44,8 @@ Firebase非使用・GAS／GitHub／Googleスプレッドシート構成の個人
 - [アカウント廃止・ペアリング方式 v3.2](docs/PAIRING-ONLY-DESIGN-v3.1.md)
 - [セットアップ手順](docs/QUICKSTART.md)
 - [実装状況](docs/IMPLEMENTATION-STATUS.md)
-- [ビルド検証結果](docs/BUILD-REPORT.md)
+- [ビルド検証結果 v3.7.0](docs/BUILD-REPORT-v3.7.0.md)
+- [ビルド検証結果（旧版）](docs/BUILD-REPORT.md)
 
 ## ソース構成
 - web/ : iPad Safari向けWebサイト
