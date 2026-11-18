@@ -77,3 +77,6 @@
 #snapshot:disabled{opacity:.45}
 .videoPane footer{gap:12px;flex-wrap:wrap}
 @media(max-width:650px){.deviceStatus{flex:1 1 100%}.videoPane footer{justify-content:flex-start}}
+
+/* v3.10: accessible PTT card, matching existing design */
+.pttCard{padding:12px 0;border-bottom:1px solid #e5eaf1}.pttCard .ptt{min-height:68px;margin:8px 0;font-size:17px;font-weight:800;border-radius:12px}.pttCard .ptt.active{background:#8e2935;box-shadow:0 0 0 4px #d84a5728}#pttLock{margin-bottom:5px}#pttLock.active{background:#dce8fc;color:#1d4d9b}#pttStatus{font-size:11px;color:#72829a;font-weight:700}

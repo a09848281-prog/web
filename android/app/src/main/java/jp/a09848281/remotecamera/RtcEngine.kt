@@ -283,10 +283,13 @@ class RtcEngine(
                 PeerConnectionFactory.InitializationOptions.builder(context.applicationContext).createInitializationOptions()
             )
             egl = EglBase.create()
+            // Ambient-first preset: use raw MIC input, not the call-oriented
+            // VOICE_COMMUNICATION source, hardware noise suppression or echo cancellation.
+            // The latter can gate quiet environmental sounds on some Android devices.
             audioDeviceModule = JavaAudioDeviceModule.builder(context.applicationContext)
-                .setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
-                .setUseHardwareAcousticEchoCanceler(true)
-                .setUseHardwareNoiseSuppressor(true)
+                .setAudioSource(MediaRecorder.AudioSource.MIC)
+                .setUseHardwareAcousticEchoCanceler(false)
+                .setUseHardwareNoiseSuppressor(false)
                 .createAudioDeviceModule()
             factory = PeerConnectionFactory.builder()
                 .setAudioDeviceModule(audioDeviceModule!!)

@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase, rebuild-v3.9-camera-controls-stability]
+    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase, rebuild-v3.9-camera-controls-stability, rebuild-v3.10-audio-pickup-ptt]
     paths:
       - "android/**"
       - "web/**"
@@ -164,8 +164,8 @@ jobs:
             throw new Error('v3.8 Android data-channel command receiver or ICE recovery grace timer is missing.');
           }
           if (!android.includes('" (v3.9 Preview)"') ||
-              !manifest.includes('android:label="Remote Camera 3.9 Preview"')) {
-            throw new Error('v3.8 preview app must be clearly distinguishable in Android launcher and paired-device list.');
+              !manifest.includes('android:label="Remote Camera 3.10 Preview"')) {
+            throw new Error('v3.10 preview app must be clearly distinguishable in Android launcher and paired-device list.');
           }
           if (!android.includes('rtc?.hasConnectedPeer() == true') ||
               !android.includes('locationRequestActive') ||
@@ -203,7 +203,9 @@ jobs:
             throw new Error('v3.9 browser camera controls, fullscreen playback recovery, adaptive streaming or new features are incomplete.');
           }
           if (!rtc.includes('JavaAudioDeviceModule.builder') ||
-              !rtc.includes('MediaRecorder.AudioSource.VOICE_COMMUNICATION') ||
+              !rtc.includes('MediaRecorder.AudioSource.MIC') ||
+              !rtc.includes('setUseHardwareNoiseSuppressor(false)') ||
+              !rtc.includes('setUseHardwareAcousticEchoCanceler(false') ||
               !rtc.includes('fun setVideoProfile(') ||
               !rtc.includes('fun setFlashlight(') ||
               !rtc.includes('fun sendDeviceStatus(') ||
