@@ -130,7 +130,7 @@ class MainActivity : Activity() {
         root.addView(startButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(stopButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(TextView(this).apply {
-            text = "アプリ画面で監視待機を開始すると、常時通知を表示してWebからの接続要求を待ち受けます。待機中は撮影・録音しません。Webからの起動を許可した場合、開始済みの待機サービスが動作している間は画面ロック後も接続を試みます。撮影・録音中はAndroidのプライバシー表示と通知に状態が出ます。強制停止・端末再起動・権限取消・省電力制御後の動作は保証されません。"
+            text = "アプリ画面で監視待機を開始すると、常時通知を表示してWebからの接続要求を待ち受けます。待機中は撮影・録音しません。カメラ・マイクの権限は必須、位置情報は任意です。位置情報を使う場合は正確な位置情報を許可してください。Webからの起動を許可した場合、開始済みの待機サービスが動作している間は画面ロック後も接続を試みます。撮影・録音中はAndroidのプライバシー表示と通知に状態が出ます。強制停止・端末再起動・権限取消・省電力制御後の動作は保証されません。"
             textSize = 13f
             setTextColor(0xFF66758B.toInt())
             setPadding(0, 22, 0, 0)
@@ -193,8 +193,14 @@ class MainActivity : Activity() {
             val micOk = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             val locationOk = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                 ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-            if (cameraOk && micOk && locationOk) startMonitoring()
-            else Toast.makeText(this, "カメラ・マイク・位置情報の権限が必要です。", Toast.LENGTH_LONG).show()
+            if (cameraOk && micOk) {
+                if (!locationOk) {
+                    Toast.makeText(this, "カメラ待機を開始します。位置情報は無効です。位置情報を使う場合はアプリの権限設定で許可してください。", Toast.LENGTH_LONG).show()
+                }
+                startMonitoring()
+            } else {
+                Toast.makeText(this, "カメラとマイクの権限が必要です。位置情報の権限は任意です。", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
