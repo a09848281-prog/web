@@ -359,7 +359,7 @@ function scheduleReconnect(failedPeer) {
     if (S.manualDisconnect || !S.device || (failedPeer && S.pc !== failedPeer)) return;
     if (failedPeer && ["connected", "connecting"].includes(failedPeer.connectionState)) return;
     S.reconnectAttempts = attempt;
-    await disconnect(false);
+    await disconnect(false, true);
     await connect(true);
   }, wait);
 }
@@ -425,9 +425,28 @@ async function connect(automatic = false) {
   }
   if (S.pc) await disconnect(false);
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    S.mic = stream;
-    stream.getAudioTracks().forEach(track => { track.enabled = false; });
+    // Reuse the already-authorized microphone stream across automatic retries.
+    // Re-requesting getUserMedia during a reconnect can be blocked by mobile Safari
+    // when the page no longer has a fresh user gesture.
+    let stream = S.mic;
+    let localAudioTrack = stream && stream.getAudioTracks()
+      .find(track => track.readyState === "live");
+    if (!localAudioTrack) {
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: false
+      });
+      S.mic = stream;
+      localAudioTrack = stream.getAudioTracks()[0] || null;
+    }
+    if (!localAudioTrack) throw new Error("マイク音声トラックを作成できませんでした。");
+    S.pttActive = false;
+    localAudioTrack.enabled = false;
     S.session = rid();
     S.seq = 0;
     // STUN can improve NAT traversal. A TURN relay is still needed on networks
@@ -443,7 +462,7 @@ async function connect(automatic = false) {
     const remote = new MediaStream();
     $("remoteVideo").srcObject = remote;
     pc.addTransceiver("video", { direction: "recvonly" });
-    pc.addTrack(stream.getAudioTracks()[0]);
+    pc.addTrack(localAudioTrack, stream);
     pc.ontrack = event => {
       const tracks = event.streams[0] ? event.streams[0].getTracks() : [event.track];
       tracks.forEach(track => {
@@ -500,12 +519,14 @@ async function connect(automatic = false) {
     status("接続要求中");
     pollAnswers();
   } catch (error) {
-    await disconnect(false);
+    const permissionDenied = error.name === "NotAllowedError" ||
+      error.name === "PermissionDeniedError" || error.name === "SecurityError";
+    await disconnect(false, !permissionDenied);
     toast("接続開始失敗: " + error.message);
-    if (error.name !== "NotAllowedError" && error.name !== "PermissionDeniedError") {
-      scheduleReconnect(null);
-    } else {
+    if (permissionDenied) {
       S.manualDisconnect = true;
+    } else {
+      scheduleReconnect(null);
     }
   }
 }
@@ -532,7 +553,7 @@ async function pollAnswers() {
     await new Promise(resolve => setTimeout(resolve, Number(S.cfg.pollIntervalMs) || 2500));
   }
 }
-async function disconnect(sendCommand = true) {
+async function disconnect(sendCommand = true, preserveMic = false) {
   if (sendCommand) {
     S.manualDisconnect = true;
     if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
@@ -562,8 +583,14 @@ async function disconnect(sendCommand = true) {
   S.pc = null;
   S.session = "";
   try { if (old) old.close(); } catch (_) {}
-  if (S.mic) S.mic.getTracks().forEach(track => track.stop());
-  S.mic = null;
+  if (S.mic) {
+    if (preserveMic) {
+      S.mic.getAudioTracks().forEach(track => { track.enabled = false; });
+    } else {
+      S.mic.getTracks().forEach(track => track.stop());
+      S.mic = null;
+    }
+  }
   S.pttActive = false;
   S.remoteAudioTracks = [];
   $("remoteVideo").srcObject = null;
@@ -644,6 +671,9 @@ async function unpairSelectedDevice() {
   if (!S.device) return;
   if (!confirm("このAndroid端末とiPadのペアリングを解除します。Android側の監視映像・音声も次回通信時に停止します。よろしいですか？")) return;
   const selected = S.device;
+  S.manualDisconnect = true;
+  if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
+  S.reconnectTimer = null;
   $("unpair").disabled = true;
   try {
     await api("unpair_device", {
@@ -755,6 +785,23 @@ async function deleteHistory() {
   toast("履歴を " + (result.deleted || 0) + " 件削除しました。");
 }
 
+window.addEventListener("offline", () => {
+  status("ネットワーク切断中", false);
+  $("streamState").textContent = "ネットワーク復帰待ち";
+});
+window.addEventListener("online", () => {
+  toast("ネットワークが復帰しました。接続状態を確認します。");
+  if (S.pc && ["disconnected", "failed", "closed"].includes(S.pc.connectionState)) {
+    scheduleReconnect(S.pc);
+  }
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !S.pc) return;
+  const state = S.pc.connectionState;
+  if (["disconnected", "failed", "closed"].includes(state)) {
+    scheduleReconnect(S.pc);
+  }
+});
 document.addEventListener("DOMContentLoaded", async () => {
   $("refresh").addEventListener("click", refreshDeviceList);
   $("pair").addEventListener("click", () => $("pairDialog").showModal());
