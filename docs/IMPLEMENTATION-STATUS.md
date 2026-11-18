@@ -1,4 +1,25 @@
-# 実装状況 v3.3.0
+# 実装状況 v3.8.0
+
+## v3.8.0 検証ブランチ
+- ブランチ：`rebuild-v3.8-realtime-stability-no-firebase`
+- GitHub Actions #111：成功 https://github.com/a09848281-prog/web/actions/runs/44298257614
+- APK Artifact：`remote-camera-debug-apk-v3.8`（Artifact ID：`14423832827`）
+- Android package：`jp.a09848281.remotecamera` / versionCode 308 / versionName 3.8.0
+- 自動検査：Web/GAS構文、HTML/API整合性、v3.8機能チェック、Gradleビルド、APK権限検査まで成功。
+- Firebase：非使用。
+- 実機検証：未完了（Galaxy A22 5G / Android 13、iPad Safari）。
+- GAS：v3.8.0のCode.gsをApps Scriptへ貼り付け、新バージョンとして再デプロイする作業が必要。
+- GitHub Pages：mainから公開。v3.8作業ブランチはまだ公開されていない。
+- mainへのアプリ／Web／GAS統合：未実施。mainに追加した変更はv3.8ブランチのCIビルド対象設定のみ。
+
+## v3.8.0の主要改善
+- 接続中の操作をWebRTCデータチャネルで直接送信し、操作のGAS依存を低減。
+- ICEの一時切断に8秒の復旧猶予を設定し、制御チャネルがOPENの間はAndroidのGASポーリングを停止。
+- 映像受信フレームの停止を検出し、映像が未着信／フリーズした際に再接続。
+- 音量スライダーをiPad側の受信音量に変更。
+- 位置情報のキャッシュ優先・8秒測位上限、GASシート読み取り量削減、応答処理時間の計測を追加。
+- GAS一時エラー時のバックオフと安全な読み取り操作の再試行を追加。
+
 
 ## 現行方式
 - Web：アカウント登録・ログイン画面を廃止。Androidの期限付き8桁コードによるペアリングを入口に変更。
