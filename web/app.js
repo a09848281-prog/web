@@ -498,7 +498,7 @@ async function connect(automatic = false) {
         }, 30000);
         startSessionClock();
         startStatsMonitor(pc);
-      } else if (state === "failed" || state === "disconnected") {
+      } else if (state === "failed" || state === "disconnected" || state === "closed") {
         if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
         S.reconnectResetTimer = null;
         if (S.connectedAt) stopSessionClock();
