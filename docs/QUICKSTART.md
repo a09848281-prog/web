@@ -4,8 +4,8 @@
 1. Google Sheetを作成します。
 2. 「拡張機能」→「Apps Script」を開きます。
 3. gas/Code.gs の最新版を Code.gs に貼り付けて保存します。
-4. 関数一覧から setupDatabase を選び、実行して権限を許可します。
-5. 初回セットアップ時に setupDatabase を実行します。既存データは消去せず、接続先Spreadsheet IDをスクリプトプロパティに保存します。**すでにv3.2で `databaseReady:true` を確認済みなら、v3.3のiframe応答修正では再実行不要です。**
+4. 初回セットアップの場合のみ、関数一覧から `setupDatabase()` を1回実行して権限を許可します。既存環境で `/exec` の `databaseReady:true` が確認できていれば再実行不要です。既存のシートやデータは削除しないでください。
+5. v3.8の `gas/Code.gs` は既存のシート構成を維持します。既存のデータベースに対して初期化・シート削除をしないでください。
 6. 初回は「新しいデプロイ」→「ウェブアプリ」。既存環境は「デプロイを管理」→編集（鉛筆）→バージョン「新バージョン」→「デプロイ」で更新します。GitHubへの更新だけではGASは自動更新されません。
 7. 実行ユーザーは「自分」、アクセスできるユーザーは「全員」にします。
 8. /exec URLが現在の web/config.json に設定されていることを確認します。
@@ -20,11 +20,11 @@
 6. 正式版URL： https://a09848281-prog.github.io/web/
 
 ## 3. Androidの準備
-1. GitHub Actionsで `rebuild-v3.8-realtime-stability-no-firebase` ブランチの最新成功した `Build Android APK` 実行を開き、Artifact `remote-camera-debug-apk-v3.8` を取得してインストールします。v3.8は別アプリIDの「Remote Camera 3.8 Preview」なので、v3.7をアンインストールせず並行インストールできます。更新時に署名不一致で拒否された場合は、古いアプリをアンインストールしてから入れ直し、8桁コードで再ペアリングしてください（アンインストールすると端末側の登録情報が消えます）。
+1. [最新成功ビルド #124](https://github.com/a09848281-prog/web/actions/runs/44303726454) のArtifact `remote-camera-debug-apk-v3.8` を取得してインストールします。表示名は「Remote Camera 3.8 Preview」、applicationIdは `jp.a09848281.remotecamera.v38preview` です。v3.7とは別アプリなので、**v3.7をアンインストールせず**並行インストールできます。
 2. Android 13端末でアプリを開きます。
 3. カメラ・マイク・通知を許可します。位置情報は任意ですが、利用する場合は「正確な位置情報」を許可し、Android本体の位置情報もONにします。待機開始後に位置情報権限を追加で許可した場合は、一度待機を停止してから再開始してください。
 4. 「監視待機を開始」を押します。
-5. Android画面に8桁のペアリングコードが表示されます。通知欄の「待機を停止」からバックグラウンド待機も停止できます。
+5. v3.8 Previewアプリに新しい8桁のペアリングコードが表示されます。v3.7のコードとは別なので、Webの端末追加でv3.8のコードを登録してください。通知欄の「待機を停止」からバックグラウンド待機も停止できます。
 
 ## 4. iPadからペアリング
 1. iPad SafariでGitHub Pagesを開きます。
@@ -92,4 +92,4 @@ Androidの待機ポーリングは省電力30秒／標準6秒／応答優先2秒
 - GASのCode.gsはv3.8.0を貼り付けて新バージョンとして再デプロイしてください。GitHub更新だけでは既存GASデプロイは更新されません。
 
 
-v3.8.0のGAS更新は [GAS再デプロイ手順](GAS-REDEPLOY-v3.8.0.md) を参照してください。公開中のv3.8 Webプレビュー：https://a09848281-prog.github.io/web/preview/
+v3.8.0のGAS更新は [GAS再デプロイ手順](GAS-REDEPLOY-v3.8.0.md) を参照してください。v3.7とv3.8 Previewは別々のペアリング情報を使います。公開中のv3.8 Webプレビュー：https://a09848281-prog.github.io/web/preview/
