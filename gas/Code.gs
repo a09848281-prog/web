@@ -1,5 +1,5 @@
 /**
- * Remote Camera GAS API v3.8
+ * Remote Camera GAS API v4.1
  * Account-free camera-first API.
  * Web controller access is granted only by an expiring Android pairing code.
  */
@@ -27,7 +27,7 @@ function doGet() {
 }
 
 function health_() {
-  const version = "4.0.0";
+  const version = "4.1.0";
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty("DB_SPREADSHEET_ID");
   if (!spreadsheetId) {
     return {
@@ -79,13 +79,13 @@ function doPost(e) {
     result = dispatch_(req);
     if (!result || typeof result !== "object") result = { ok: true, value: result };
     result.serverMs = Date.now() - startedAt;
-    result.apiVersion = "4.0.0";
+    result.apiVersion = "4.1.0";
   } catch (err) {
     result = {
       ok: false,
       error: safeError_(err),
       serverMs: Date.now() - startedAt,
-      apiVersion: "4.0.0"
+      apiVersion: "4.1.0"
     };
   }
   if (params.mode === "json") {
