@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main]
+    branches: [main, rebuild-v3.5-remote-standby]
     paths:
       - "android/**"
       - "web/**"
@@ -75,6 +75,13 @@ jobs:
               !manifest.includes('android.permission.ACCESS_NETWORK_STATE')) {
             throw new Error('Android network permissions are missing.');
           }
+          if (!main.includes('waitModeLabels') ||
+              !main.includes('remoteCaptureSwitch') ||
+              !android.includes('ACTION_UPDATE_LOCAL_SETTINGS') ||
+              !android.includes('remoteCaptureEnabled') ||
+              !rtc.includes('ACCESS_NETWORK_STATE permission verified before WebRTC initialization')) {
+            throw new Error('v3.5 local standby settings or WebRTC permission guard are missing.');
+          }
           if (!gas.includes('case "unpair_device"') || !gas.includes('function unpairDevice_') ||
               !app.includes('kind: "bye"') || !android.includes('"bye"') ||
               !rtc.includes('fun closeSession(')) {
@@ -88,9 +95,26 @@ jobs:
       - name: Build Android debug APK
         working-directory: android
         run: gradle :app:assembleDebug --stacktrace
+      - name: Verify permissions inside the built APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$SDK_ROOT"
+          BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          AAPT="$BUILD_TOOLS/aapt"
+          test -x "$AAPT"
+          "$AAPT" dump permissions android/app/build/outputs/apk/debug/app-debug.apk | tee /tmp/remote-camera-apk-permissions.txt
+          for permission in \
+            android.permission.INTERNET \
+            android.permission.ACCESS_NETWORK_STATE \
+            android.permission.CAMERA \
+            android.permission.RECORD_AUDIO; do
+            grep -Fq "$permission" /tmp/remote-camera-apk-permissions.txt
+          done
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-camera-debug-apk-v3.3
+          name: remote-camera-debug-apk-v3.5
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
