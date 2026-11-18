@@ -83,3 +83,8 @@
 .viewerControls #ptt.pttProminent:disabled{opacity:.48}
 .viewerControls #ptt.pttProminent.active{background:#8e2935;transform:scale(.98)}
 @media(max-width:650px){.viewerControls #ptt.pttProminent{flex:1 1 100%;min-height:54px;font-size:16px}}
+
+.audioMeterLabel{display:flex;align-items:center;gap:8px;min-width:190px;margin:0;font-size:12px;color:#52647b}
+.audioMeterLabel meter{width:90px;height:14px}
+#pttLock,#remoteMute{min-height:44px}
+@media(max-width:650px){.audioMeterLabel{flex:1 1 100%;min-height:34px}}
