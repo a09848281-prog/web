@@ -866,6 +866,7 @@ async function connect(automatic = false) {
         captureRatio: $("captureRatio").value,
         fpsLimit: Number($("fpsLimit").value)
       }).catch(error => console.debug("Initial capture profile send failed", error));
+      $("refreshStatus").disabled = false;
       requestDeviceStatus().catch(error => console.debug("Android status request failed", error));
       if (S.androidStatusTimer) clearInterval(S.androidStatusTimer);
       S.androidStatusTimer = setInterval(() => {
@@ -893,6 +894,7 @@ async function connect(automatic = false) {
           scheduleReconnect(pc, true, 1200);
         };
         $("placeholder").classList.add("hidden");
+        $("snapshot").disabled = false;
         startVideoWatchdog(pc);
         restoreRemotePlayback();
       } else if (track.kind === "audio") {
@@ -1090,6 +1092,8 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   S.remoteAudioTracks = [];
   $("remoteVideo").srcObject = null;
   $("remoteVideo").muted = true;
+  $("snapshot").disabled = true;
+  $("refreshStatus").disabled = true;
   $("videoState").textContent = "映像待機中";
   $("placeholder").classList.remove("hidden");
   $("connect").disabled = !S.device;
