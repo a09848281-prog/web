@@ -116,10 +116,17 @@ jobs:
             if (!ids.includes(id) || !app.includes(id)) throw new Error('Missing v3.6 viewer feature: ' + id);
           }
           if (!app.includes('scheduleReconnect') || !app.includes('collectConnectionStats') ||
-              !app.includes('stun:stun.l.google.com:19302')) {
-            throw new Error('Web reconnect, diagnostics or STUN feature is missing.');
+              !app.includes('stun:stun.l.google.com:19302') ||
+              !app.includes('Reuse the already-authorized microphone stream') ||
+              !app.includes('visibilitychange') || !app.includes('45秒以内にAndroidから応答がありません')) {
+            throw new Error('Web reconnect, mic reuse, resume recovery, diagnostics or STUN feature is missing.');
           }
-          console.log('v3.7: wide camera selection, 16:9 profiles, STUN, optional dual-provider location, auto-reconnect, diagnostics and viewer controls OK.');
+          if (!app.includes('async function disconnect(sendCommand = true, preserveMic = false)') ||
+              !app.includes('if (preserveMic)') ||
+              !app.includes('S.manualDisconnect = true')) {
+            throw new Error('Automatic reconnect must preserve the local microphone while manual disconnect stops it.');
+          }
+          console.log('v3.7: wide camera selection, smooth live quality changes, camera recovery, STUN, location recovery, mic-preserving reconnect and responsive controls OK.');
           NODE
       - name: Build Android debug APK
         working-directory: android
