@@ -15,6 +15,10 @@
 - APK size: `50,793,405` bytes
 - ZIP SHA-256: `b94844d26a2c70e06033a9eacc4fec2bee8a6140c88bae01ebcbc007c6084de3`
 - APK SHA-256: `7ffa7e7620c54d293ae3afe766e6b095e81ec526845e5c6e8be6d4404bab643d`
+- Preview URL: https://a09848281-prog.github.io/web/preview/
+- GitHub Pages deployment: [run 44300276881](https://github.com/a09848281-prog/web/actions/runs/44300276881), successful
+- Main branch source/CI validation of the preview-only web assets: [run 44300276804](https://github.com/a09848281-prog/web/actions/runs/44300276804), successful
+- The production root URL https://a09848281-prog.github.io/web/ remains unchanged; only the v3.8 preview is at /web/preview/.
 
 ## Automated verification
 
