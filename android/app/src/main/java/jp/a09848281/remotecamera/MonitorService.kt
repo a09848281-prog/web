@@ -63,6 +63,7 @@ class MonitorService : Service() {
     private var lastLocationAttempt = 0L
     private var lastCodeRefresh = 0L
     private val apiReady = CompletableDeferred<Unit>()
+    private val locationRequestActive = java.util.concurrent.atomic.AtomicBoolean(false)
     private var cpuWakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -261,6 +262,7 @@ class MonitorService : Service() {
             api = ApiClient(gasUrl)
             ensureDevice()
             if (!apiReady.isCompleted) apiReady.complete(Unit)
+            var consecutiveFailures = 0
             while (scope.isActive) {
                 try {
                     val deviceId = prefs.getString("deviceId", "") ?: ""
@@ -269,6 +271,7 @@ class MonitorService : Service() {
                         "device_poll",
                         JSONObject().put("deviceId", deviceId).put("deviceSecret", secret).put("afterSeq", afterSeq)
                     )
+                    consecutiveFailures = 0
                     if (!response.optBoolean("registered", false)) {
                         prefs.edit().putBoolean("serverPaired", false).apply()
                         // A controller can revoke pairing remotely. Stop media immediately on the next poll.
@@ -320,7 +323,12 @@ class MonitorService : Service() {
                                         }
                                         if (rtc == null) {
                                             val currentApi = api ?: continue
-                                            rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState)
+                                            rtc = RtcEngine(this, currentApi, deviceId, secret, scope, ::notifyState) { message ->
+                                                val name = message.optString("name")
+                                                val payload = message.optJSONObject("payload") ?: JSONObject()
+                                                val command = JSONObject().put("command", name).put("payload", payload)
+                                                scope.launch { processCommand(command) }
+                                            }
                                         }
                                         // Apply the selected profile before creating Camera2 and the first peer.
                                         // The sender bitrate/FPS are applied inside handleOffer after tracks are added.
@@ -343,18 +351,32 @@ class MonitorService : Service() {
                         // Advance only after this poll's signals and commands have been handed to the handlers.
                         afterSeq = maxOf(afterSeq, response.optInt("latestSeq", afterSeq))
                         prefs.edit().putInt("afterSeq", afterSeq).apply()
-                        notifyState(if (rtc?.hasPeers() == true) "監視中・接続済み" else "監視待機中")
+                        notifyState(
+                            when {
+                                rtc?.hasConnectedPeer() == true -> "WebRTC通信接続中・映像監視中"
+                                rtc?.hasPeers() == true -> "WebRTC接続処理中"
+                                else -> "監視待機中"
+                            }
+                        )
                     }
                 } catch (e: Exception) {
+                    consecutiveFailures = (consecutiveFailures + 1).coerceAtMost(5)
                     Log.e("RemoteCameraService", "Polling iteration failed; foreground service remains active", e)
-                    notifyState("通信または接続処理に失敗しました。待機を継続して再試行します")
+                    notifyState("GAS一時エラー：待機を継続して再試行します（" + consecutiveFailures + "/5）")
                 }
-                val waitSeconds = when (prefs.getString("waitMode", "standard")) {
-                    "eco" -> 60L
-                    "fast" -> 5L
-                    else -> 15L
+                if (consecutiveFailures > 0) {
+                    // Exponential backoff prevents a temporary GAS/network outage
+                    // from creating a tight retry loop.
+                    val retryDelay = (1000L * (1L shl consecutiveFailures.coerceAtMost(4))).coerceAtMost(15000L)
+                    delay(retryDelay)
+                } else {
+                    val waitSeconds = when (prefs.getString("waitMode", "standard")) {
+                        "eco" -> 30L
+                        "fast" -> 2L
+                        else -> 6L
+                    }
+                    delay(waitSeconds * 1000L)
                 }
-                delay(waitSeconds * 1000L)
             }
         } catch (e: Exception) {
             if (!apiReady.isCompleted) apiReady.completeExceptionally(e)
@@ -479,47 +501,60 @@ class MonitorService : Service() {
     }
 
     private suspend fun requestLocation(mode: String) {
-        val fineGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarseGranted = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted && !coarseGranted) {
-            notifyState("位置情報の権限がありません。Android設定で許可してください")
+        if (!locationRequestActive.compareAndSet(false, true)) {
+            notifyState("位置情報を取得中です。先行する測位を優先します")
             return
         }
-
-        val manager = getSystemService(LOCATION_SERVICE) as LocationManager
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            .filter { provider -> try { manager.isProviderEnabled(provider) } catch (_: Exception) { false } }
-        if (providers.isEmpty()) {
-            notifyState("位置情報サービスがOFFです。Androidの位置情報をONにしてください")
-            return
-        }
-
-        lastLocationAttempt = System.currentTimeMillis()
-        notifyState("位置情報を取得中（GPS・ネットワークを確認）")
         try {
-            val now = System.currentTimeMillis()
-            val cached = providers.mapNotNull { provider ->
-                try { manager.getLastKnownLocation(provider) } catch (_: SecurityException) { null }
-            }.filter { location ->
-                val age = now - location.time
-                age in 0..120000L
-            }.minByOrNull { it.accuracy }
-
-            val fresh = acquireBestLocation(manager, providers)
-            val selected = fresh ?: cached
-            if (selected != null) {
-                saveLocation(selected, mode)
-            } else {
-                notifyState("位置情報を取得できません。位置情報ON・屋外・権限（正確な位置情報）を確認してください")
+            val fineGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val coarseGranted = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (!fineGranted && !coarseGranted) {
+                notifyState("位置情報の権限がありません。Android設定で許可してください")
+                return
             }
-        } catch (e: SecurityException) {
-            notifyState("位置情報の権限が不足しています。正確な位置情報を許可してください")
-        } catch (e: Exception) {
-            Log.e("RemoteCameraService", "Location request failed", e)
-            notifyState("位置情報取得失敗：" + (e.message ?: "設定・権限を確認してください"))
+
+            val manager = getSystemService(LOCATION_SERVICE) as LocationManager
+            val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                .filter { provider -> try { manager.isProviderEnabled(provider) } catch (_: Exception) { false } }
+            if (providers.isEmpty()) {
+                notifyState("位置情報サービスがOFFです。Androidの位置情報をONにしてください")
+                return
+            }
+
+            lastLocationAttempt = System.currentTimeMillis()
+            notifyState("位置情報を確認中（直近の測位を先に利用）")
+            try {
+                val now = System.currentTimeMillis()
+                val cached = providers.mapNotNull { provider ->
+                    try { manager.getLastKnownLocation(provider) } catch (_: SecurityException) { null }
+                }.filter { location ->
+                    val age = now - location.time
+                    age in 0..120000L
+                }.minByOrNull { it.accuracy }
+
+                // A recent cached fix is substantially faster than waiting for a new GPS lock.
+                if (cached != null && now - cached.time <= 60000L) {
+                    saveLocation(cached, mode)
+                    return
+                }
+
+                val fresh = acquireBestLocation(manager, providers)
+                val selected = fresh ?: cached
+                if (selected != null) {
+                    saveLocation(selected, mode)
+                } else {
+                    notifyState("位置情報を取得できません。位置情報ON・屋外・正確な位置情報の権限を確認してください")
+                }
+            } catch (e: SecurityException) {
+                notifyState("位置情報の権限が不足しています。正確な位置情報を許可してください")
+            } catch (e: Exception) {
+                Log.e("RemoteCameraService", "Location request failed", e)
+                notifyState("位置情報取得失敗：" + (e.message ?: "設定・権限を確認してください"))
+            }
+        } finally {
+            locationRequestActive.set(false)
         }
     }
-
     /**
      * Listen to GPS and network providers together. Keep the most accurate fix,
      * finish early for a good fix, and always unregister the listener.
@@ -533,7 +568,7 @@ class MonitorService : Service() {
         var finishRunnable: Runnable? = null
         val best = AtomicReference<Location?>(null)
         return try {
-            withTimeoutOrNull(18000L) {
+            withTimeoutOrNull(8000L) {
                 suspendCancellableCoroutine { continuation ->
                     val listener = object : LocationListener {
                         override fun onLocationChanged(location: Location) {
@@ -542,7 +577,7 @@ class MonitorService : Service() {
                                 (location.accuracy == previous.accuracy && location.time > previous.time)) {
                                 best.set(location)
                             }
-                            if (location.accuracy <= 35f && continuation.isActive) {
+                            if (location.accuracy <= 45f && continuation.isActive) {
                                 finishRunnable?.let { handler.removeCallbacks(it) }
                                 continuation.resume(best.get())
                             }
@@ -567,7 +602,7 @@ class MonitorService : Service() {
                             Log.w("RemoteCameraService", "Could not start provider " + provider, e)
                         }
                     }
-                    handler.postDelayed(finishRunnable!!, 12000L)
+                    handler.postDelayed(finishRunnable!!, 6000L)
                     if (!registered && continuation.isActive) {
                         handler.removeCallbacks(finishRunnable!!)
                         continuation.resume(null)
