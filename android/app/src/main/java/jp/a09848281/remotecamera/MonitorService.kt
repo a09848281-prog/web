@@ -153,9 +153,12 @@ class MonitorService : Service() {
         prefs.edit().putBoolean("monitoringEnabled", true).apply()
         val notification = notification("待機中：撮影・録音なし／Web要求を確認しています")
         if (Build.VERSION.SDK_INT >= 29) {
-            val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            val locationGranted =
+                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                    checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (locationGranted) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             startForeground(NOTIFICATION_ID, notification, types)
         } else {
             startForeground(NOTIFICATION_ID, notification)
