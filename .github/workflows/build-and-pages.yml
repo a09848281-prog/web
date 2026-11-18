@@ -138,8 +138,10 @@ jobs:
           }
           if (!app.includes('statsFreezeCount >= 3') ||
               !app.includes('scheduleReconnect(pc, true)') ||
+              !app.includes('hasReceivedVideoFrame') ||
+              !app.includes('Only report a freeze after at least one remote frame has arrived.') ||
               !app.includes('failedPeer.connectionState === "connected" && !forceReconnect')) {
-            throw new Error('Frozen video frames must trigger bounded forced reconnect without overriding manual disconnect.');
+            throw new Error('Frozen video frames must trigger bounded forced reconnect only after an initial frame, without overriding manual disconnect.');
           }
           console.log('v3.7: wide camera selection, smooth live quality changes, camera recovery, frozen-frame detection, STUN, location recovery, mic-preserving reconnect and responsive controls OK.');
           NODE
