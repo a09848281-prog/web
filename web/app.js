@@ -63,7 +63,8 @@ const S = {
   motionTimer: null,
   motionPrevious: null,
   motionLastTriggered: 0,
-  motionEvents: []
+  motionEvents: [],
+  viewerHeartbeatTimer: null
 };
 
 function rid() {
@@ -228,7 +229,7 @@ function renderDevices() {
   });
 }
 function setControlsEnabled(enabled) {
-  ["connect", "locate", "saveSettings", "history", "deleteHistory", "unpair"].forEach(id => {
+  ["connect", "locate", "saveSettings", "history", "deleteHistory", "unpair", "viewers"].forEach(id => {
     $(id).disabled = !enabled;
   });
   $("connect").disabled = !enabled || !!S.pc;
@@ -1131,6 +1132,7 @@ async function connect(automatic = false) {
           S.reconnectResetTimer = null;
         }, 30000);
         startSessionClock();
+        startViewerHeartbeat();
         startStatsMonitor(pc);
         startVideoWatchdog(pc);
         if ($("motionEnabled").checked) startMotionDetection();
@@ -1174,6 +1176,23 @@ async function connect(automatic = false) {
     }
   }
 }
+function startViewerHeartbeat() {
+  if (S.viewerHeartbeatTimer || !S.device) return;
+  const ping = () => {
+    if (!S.device || !S.pc || S.manualDisconnect) return;
+    api("viewer_ping", {
+      controllerToken: S.device.controllerToken,
+      deviceId: S.device.deviceId
+    }).catch(error => console.debug("Viewer heartbeat failed", error));
+  };
+  ping();
+  S.viewerHeartbeatTimer = setInterval(ping, 30000);
+}
+function stopViewerHeartbeat() {
+  if (S.viewerHeartbeatTimer) clearInterval(S.viewerHeartbeatTimer);
+  S.viewerHeartbeatTimer = null;
+}
+
 async function pollAnswers() {
   const startedAt = Date.now();
   while (S.pc && S.session && S.device) {
@@ -1222,6 +1241,7 @@ async function disconnect(sendCommand = true, preserveMic = false) {
     S.reconnectTimer = null;
   }
   stopStatsMonitor();
+  stopViewerHeartbeat();
   stopVideoWatchdog();
   stopMotionDetection(true);
   stopSessionClock();
