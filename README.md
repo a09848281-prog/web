@@ -19,12 +19,20 @@ Web / GAS API：4.2.0 / Firebase不使用
 
 動体検知は閲覧ブラウザー内のみで解析し、イベント画像をGASへ送信しません。背景タブや画面ロック中の継続は保証されません。最大3台は同時接続の安全上限で、端末性能・ネットワーク帯域によっては画質調整が必要です。
 
+### v4.2 公開URL
+
+https://a09848281-prog.github.io/web/
+
+GitHub Pages v4.2デプロイは成功済み。元のmain版へ戻す方法は [公開・ロールバック手順](docs/PAGES-ROLLBACK-v4.2.0.md) を参照。
+
 ### v4.2ドキュメント
 - docs/REMOTE-CAMERA-v4.2-SPEC.md
 - docs/QUICKSTART-v4.2.0.md
 - docs/GAS-REDEPLOY-v4.2.0.md
 - docs/TEST-PLAN-v4.2.0.md
 - docs/BOOKMARKLET-v4.2-UI.md
+- docs/PAGES-ROLLBACK-v4.2.0.md
+- docs/BUILD-REPORT-v4.2.0.md
 
 ---
 
