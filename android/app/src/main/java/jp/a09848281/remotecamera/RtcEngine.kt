@@ -649,8 +649,7 @@ videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
             } catch (e: CameraAccessException) {
                 lastError = e
                 val retryable = e.reason == CameraAccessException.CAMERA_IN_USE ||
-                    e.reason == CameraAccessException.MAX_CAMERAS_IN_USE ||
-                    e.reason == CameraAccessException.TORCH_IN_USE
+                    e.reason == CameraAccessException.MAX_CAMERAS_IN_USE
                 if (!retryable || attempt == 3) break
                 try {
                     Thread.sleep(120L * (attempt + 1))
