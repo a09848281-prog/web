@@ -313,7 +313,18 @@ jobs:
               !bookmarklet.includes('Remote Camera v4.2')) {
             throw new Error('v4.2 motion detection, event export, viewer heartbeat or bookmarklet is missing.');
           }
-          console.log('v4.2 multi-viewer, per-browser presence, local motion alerts, bookmarklet and version checks passed.');
+          for (const id of ['imageViewerDialog','imageViewerImage','imageViewerTitle','imageViewerDownload','imageViewerFullscreen','imageViewerClose']) {
+            if (!html.includes('id="' + id + '"')) throw new Error('Missing received-image viewer element: ' + id);
+          }
+          if (!app.includes('function openImageViewer') ||
+              !app.includes('function saveImageViewer') ||
+              !app.includes('function toggleImageFullscreen') ||
+              !app.includes('ICE候補の収集が25秒以内に完了') ||
+              !app.includes('session-scoped GAS bye') ||
+              app.includes('async function formatDuration')) {
+            throw new Error('v4.2 received-image viewer or connection stability guard is missing.');
+          }
+          console.log('v4.2 multi-viewer, motion detection, received-image fullscreen, connection safeguards and version checks passed.');
           NODE
       - name: Build Android debug APK
         working-directory: android
