@@ -36,6 +36,7 @@
       min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;
       border:0!important;border-radius:0!important
     }
+    .panel.image-fullscreen .bar{display:none!important}
     .tip{position:absolute;left:10px;bottom:10px;z-index:2;background:#101827dd;color:#fff;border-radius:8px;padding:6px 9px;font-size:11px;pointer-events:none}
     @media(max-width:640px){.panel{inset:0;width:100vw;height:100dvh;min-width:0;min-height:0;border-radius:0;border:0}.panel.min{inset:auto 8px 8px 8px;width:auto;height:48px!important}.bar{height:48px;min-height:48px}.tip{display:none}}
   `;
