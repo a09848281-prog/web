@@ -250,3 +250,79 @@
 }
 
 /* v4.2.2 side-by-side preview publication marker */
+
+
+/* v4.5.1 — clean white interface */
+:root{color-scheme:light;background:#fff;color:#53657b}
+body{background:#fff;color:#53657b}
+.top{background:#fff;color:#53657b;border-bottom:1px solid #e6edf5;box-shadow:0 2px 10px rgba(66,104,150,.04)}
+.top small{color:#8292a7}
+.pill{background:#edf3fa;color:#526985;border:1px solid #e0e9f3}
+.pill.online{background:#e7f5ee;color:#347a5c}
+button{background:#f4f7fb;color:#53657b;border:1px solid #e1e9f2}
+.primary{background:#e9f2ff;color:#2865b8;border:1px solid #cbdcf5}
+.link{color:#4477b7}
+.danger{color:#b85a68}
+input,select{background:#fff;color:#53657b;border-color:#d7e2ee}
+.side,.view{background:#fff;border-color:#e2eaf3;color:#53657b;box-shadow:0 4px 18px rgba(66,104,150,.035)}
+.view{background:#fff;color:#53657b}
+.viewScreenHeader{color:#70839b}
+.screenHeading strong{color:#526a88}
+#screenConnectionState,#androidStatus{color:#71849c}
+.deviceInfoMini{color:#71849c}
+.videoPane{background:#f4f7fb;border:1px solid #e5edf5}
+#placeholder{color:#667b94}
+#placeholder small{color:#8799ad}
+.videoPane footer{background:linear-gradient(transparent,rgba(255,255,255,.94));color:#52657b}
+.view .videoPane{background:#f4f7fb}
+.metrics{background:#f5f8fc;color:#60748b}
+.settingsGroup{border-color:#e5edf5}
+.settingsGroup summary{color:#536b88}
+.controlCard h2{color:#53657b}
+.controlEyebrow{color:#8b9bb0}
+#toast{background:#fff;color:#52657b;border:1px solid #dfe8f2;box-shadow:0 5px 20px rgba(66,104,150,.12)}
+dialog{background:#fff;color:#53657b;border:1px solid #e0e9f2}
+dialog::backdrop{background:rgba(204,218,235,.48)}
+.dialog p{color:#71849c}
+.imageViewerDialog[open]{background:#fff;color:#53657b}
+.imageViewerDialog::backdrop{background:#fff}
+.imageViewerHeader{background:#fff;color:#53657b;border-bottom:1px solid #e1eaf3}
+.imageViewerHeader button{background:#edf3fa;color:#536b88;border:1px solid #dce7f2}
+.imageViewerStage{background:#f8fbff}
+.motionSettings{margin-top:10px}
+.motionSettings .settingsBody{padding-top:8px}
+.motionSettings .settingsBody>label{margin:8px 0}
+.motionZoneActions{display:flex;gap:7px;margin:8px 0}
+.motionZoneActions>*{flex:1;min-width:0;margin:0}
+.motionSubheading{display:block;color:#58718f;font-size:12px;margin:6px 0}
+.motionZoneList{display:grid;gap:6px;margin:8px 0}
+.motionZoneItem{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;padding:9px 10px;text-align:left;background:#f8fbff;border:1px solid #e1eaf4}
+.motionZoneItem b{font-size:12px;color:#526b89}
+.motionZoneItem small{font-size:10px;color:#8294aa}
+.motionZoneItem.selected{background:#edf5ff;border-color:#9bbce8}
+.motionSettings .hint{color:#8798ad}
+#motionState{display:block;margin-top:8px;color:#597796;font-size:11px;line-height:1.5}
+#personState{padding:7px 9px;border-radius:8px;background:#f5f9fd;color:#5c7898}
+.motionOverlay{position:absolute;z-index:3;display:block;max-width:none;pointer-events:none;touch-action:none;transform-origin:center center}
+.motionOverlay.is-editing{pointer-events:auto;cursor:crosshair;touch-action:none}
+.motionOverlayHint{position:absolute;z-index:5;left:50%;top:12px;transform:translateX(-50%);padding:8px 12px;border-radius:9px;background:#fff;color:#4d6f98;border:1px solid #d9e7f6;box-shadow:0 3px 12px rgba(66,104,150,.12);font-size:12px;white-space:nowrap;pointer-events:none}
+.videoPane #placeholder{z-index:2}
+.videoPane footer{z-index:4}
+.motionThumb{background:#f7faff;color:#5377a7;border-color:#d9e6f4}
+.motionThumb img{background:#edf3fa}
+@media(max-width:760px){
+  .motionZoneActions{flex-wrap:wrap}
+  .motionZoneActions>*{flex:1 1 100%}
+  .motionOverlayHint{max-width:calc(100% - 20px);white-space:normal;text-align:center}
+}
+
+/* v4.5.1 white control accents — avoid dark/red/yellow control blocks */
+.viewerControls #ptt.pttProminent,
+.viewerControls #ptt.pttProminent.active{
+  background:#edf4fc;color:#526b89;border:1px solid #dce8f5;
+  box-shadow:none;transform:none
+}
+#flashlight,#flashlight.active{
+  background:#f4f8fd;color:#526b89;border:1px solid #dce8f5
+}
+#keepAwake.active{background:#eef6f1;color:#5d826d}
