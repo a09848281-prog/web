@@ -1,0 +1,97 @@
+name: Validate Remote Camera v4.2.2
+on:
+  push:
+    branches: [rebuild-v4.2.2-ultra-stable-controls]
+    paths:
+      - "web/**"
+      - "gas/**"
+      - "android/**"
+      - ".github/workflows/validate-v422.yml"
+  pull_request:
+    branches: [rebuild-v4.2-ui-layout-stability]
+    paths:
+      - "web/**"
+      - "gas/**"
+      - "android/**"
+      - ".github/workflows/validate-v422.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: remote-camera-v422-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: JavaScript syntax
+        run: |
+          node --check web/app.js
+          cp gas/Code.gs /tmp/gas-check.js
+          node --check /tmp/gas-check.js
+      - name: Web, GAS and Android integration checks
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const assert = require('assert');
+          const html = fs.readFileSync('web/index.html', 'utf8');
+          const css = fs.readFileSync('web/app.css', 'utf8');
+          const app = fs.readFileSync('web/app.js', 'utf8');
+          const gas = fs.readFileSync('gas/Code.gs', 'utf8');
+          const rtc = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/RtcEngine.kt', 'utf8');
+          const service = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/MonitorService.kt', 'utf8');
+          const gradle = fs.readFileSync('android/app/build.gradle.kts', 'utf8');
+          const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
+          const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]);
+          assert.equal(ids.length, new Set(ids).size, 'HTML IDs must be unique');
+          const missing = [...new Set([...app.matchAll(/\$\("([^"]+)"\)/g)].map(x => x[1]).filter(x => !ids.includes(x)))];
+          assert.deepEqual(missing, [], 'Every literal JS element reference must exist in HTML');
+          const asideEnd = html.indexOf('</aside>');
+          const viewStart = html.indexOf('<section class="view"');
+          assert(asideEnd > 0 && viewStart > asideEnd, 'Right display must follow the left control panel');
+          const left = html.slice(0, asideEnd);
+          const right = html.slice(viewStart);
+          for (const id of ['connect','disconnect','flashlight','captureRatio','fpsLimit','voiceClean','ptt','snapshot','fullscreen','motionEnabled']) {
+            assert(left.includes('id="' + id + '"'), id + ' must be on the left');
+          }
+          assert(right.includes('id="remoteVideo"') && right.includes('id="mapPane"'), 'Right panel must retain video and map outputs');
+          for (const id of ['androidStatus','monitorUptime','monitorTraffic','viewerTraffic']) {
+            assert(right.includes('id="' + id + '"'), id + ' must be compact information in the right header');
+          }
+          assert(!right.includes('id="connect"') && !right.includes('class="viewerControls"'), 'Right side must not contain operations');
+          assert(html.includes('value="60"') && app.includes('function updateVoiceCleaning()'), '60fps and web-side voice filter are required');
+          assert(app.includes('candidatePair.bytesReceived') && app.includes('S.sessionBytes') && app.includes('function formatBytes'), 'Viewer traffic metrics are required');
+          assert(app.includes('function toggleFlashlight()') && app.includes('flashlightPending') && app.includes('command_result'), 'Torch must wait for an actual device response');
+          assert(app.includes('const rttMs =') && app.includes('function updateMonitorInfo()'), 'WebRTC latency and monitor metrics are required');
+          assert(css.includes('#videoPane:fullscreen') && css.includes('height:100dvh'), 'Video full-screen sizing is required');
+          assert(gas.includes('const version = "4.2.2"') && gas.includes('fpsLimit: clamp_(s.fpsLimit, 15, 60, 24)'), 'GAS version and 60fps range must match');
+          assert(rtc.includes('fpsLimit.coerceIn(15, 60)') && rtc.includes('profile.fps, minOf(profile.fps, 30), 24, 20, 15'), 'Android must try requested FPS and lower fallbacks');
+          assert(rtc.includes('monitorMetricsProvider') && service.includes('TrafficStats.getUidRxBytes'), 'Android uptime and per-app traffic estimate are required');
+          assert(rtc.includes('CameraAccessException.TORCH_IN_USE') && rtc.includes('isFlashlightOn()'), 'Torch retry and confirmed state are required');
+          assert(service.includes('withTimeoutOrNull(4500L)') && service.includes('freshAfterCache'), 'Fast location cache and bounded refresh are required');
+          assert(/versionCode\s*=\s*422/.test(gradle) && /versionName\s*=\s*"4.2.2"/.test(gradle) && config.appVersion === '4.2.2', 'Version alignment failed');
+          assert(!/firebase/i.test(gradle), 'Firebase must remain excluded');
+          console.log('v4.2.2 Web / GAS / Android integration checks passed.');
+          NODE
+      - name: Build Android debug APK
+        working-directory: android
+        run: gradle --no-daemon --stacktrace assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-camera-debug-apk-v4.2.2
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
