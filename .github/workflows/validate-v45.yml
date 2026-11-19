@@ -65,9 +65,9 @@ jobs:
           const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
           const webManifest = JSON.parse(fs.readFileSync('web/manifest.webmanifest', 'utf8'));
 
-          const ids = [...html.matchAll(/\\bid="([^"]+)"/g)].map(x => x[1]);
+          const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]);
           assert.equal(ids.length, new Set(ids).size, 'HTML IDs must be unique');
-          const missing = [...new Set([...app.matchAll(/\\$\("([^"]+)"\)/g)].map(x => x[1]).filter(x => !ids.includes(x)))];
+          const missing = [...new Set([...app.matchAll(/\$\("([^"]+)"\)/g)].map(x => x[1]).filter(x => !ids.includes(x)))];
           assert.deepEqual(missing, [], 'Every literal JS element reference must exist in HTML');
 
           const asideEnd = html.indexOf('</aside>');
@@ -99,8 +99,8 @@ jobs:
 
           assert(rtc.includes('fpsLimit.coerceIn(15, 60)'), 'Inherited v4.2.2 60fps camera profile missing');
           assert(service.includes('TrafficStats.getUidRxBytes'), 'Inherited monitor traffic metric missing');
-          assert(/applicationId\\s*=\\s*"jp\\.a09848281\\.remotecamera\\.v45preview"/.test(gradle), 'v4.5 unique applicationId missing');
-          assert(/versionCode\\s*=\\s*450/.test(gradle) && /versionName\\s*=\\s*"4.5.0"/.test(gradle), 'Android v4.5 identity mismatch');
+          assert(/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v45preview"/.test(gradle), 'v4.5 unique applicationId missing');
+          assert(/versionCode\s*=\s*450/.test(gradle) && /versionName\s*=\s*"4.5.0"/.test(gradle), 'Android v4.5 identity mismatch');
           assert(manifest.includes('Remote Camera 4.5 Preview'), 'Android app label mismatch');
           assert(!/firebase/i.test(gradle), 'Firebase must remain excluded');
 
