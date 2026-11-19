@@ -1,0 +1,68 @@
+name: Deploy Remote Camera v4.2.2 Side-by-side Preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages-v42-preview
+      url: ${{ steps.deployment.outputs.page_url }}v4.2.2-preview/
+    steps:
+      - name: Checkout published v4.2 website source
+        uses: actions/checkout@v4
+        with:
+          ref: rebuild-v4.2-multi-viewer-camera
+          path: base-v42
+
+      - name: Checkout v4.2.2 preview source
+        uses: actions/checkout@v4
+        with:
+          ref: rebuild-v4.2.2-ultra-stable-controls
+          path: v422
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Build side-by-side Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s base-v42/web/index.html
+          test -s base-v42/web/app.js
+          test -s v422/web/index.html
+          test -s v422/web/app.js
+          test -s v422/web/app.css
+          test -s v422/web/config.json
+          node --check base-v42/web/app.js
+          node --check v422/web/app.js
+          node -e 'const old=require("./base-v42/web/config.json"); if(old.appVersion!=="4.2.0") throw new Error("Published root must remain v4.2.0");'
+          node -e 'const next=require("./v422/web/config.json"); if(next.appVersion!=="4.2.2" || !next.gasUrl.endsWith("/exec")) throw new Error("v4.2.2 config is invalid");'
+          mkdir -p _site/v4.2.2-preview
+          cp -a base-v42/web/. _site/
+          cp -a v422/web/. _site/v4.2.2-preview/
+          test -s _site/index.html
+          test -s _site/v4.2.2-preview/index.html
+          echo "Existing v4.2 root retained; v4.2.2 added under /v4.2.2-preview/."
+
+      - name: Upload combined Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy both versions
+        id: deployment
+        uses: actions/deploy-pages@v4
