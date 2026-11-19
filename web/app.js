@@ -489,6 +489,8 @@ async function collectConnectionStats(pc) {
     };
     const previous = S.previousStats;
     S.previousStats = current;
+    const rttMs = candidatePair && Number.isFinite(Number(candidatePair.currentRoundTripTime))
+      ? Math.round(Number(candidatePair.currentRoundTripTime) * 1000) : null;
     if (!previous) {
       S.sessionBytes = Math.max(S.sessionBytes, current.totalBytes);
       updateMonitorInfo();
