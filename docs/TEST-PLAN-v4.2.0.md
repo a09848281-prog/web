@@ -34,6 +34,14 @@
 18. 同一Wi-Fi / Wi-Fiとモバイル回線の両方で確認すること（TURN未構成の制限）。
 19. Androidの待機中通知、カメラ・マイクのプライバシー表示、バッテリー温度・負荷を確認すること。
 
+## CI確認記録（2026年11月19日）
+
+- 最新ソース検査・APKビルド：成功（[Actions run](https://github.com/a09848281-prog/web/actions/runs/44489831642)）
+- 最新v4.2 Pagesデプロイ：成功（[Actions run](https://github.com/a09848281-prog/web/actions/runs/44489823826)）
+- 構文、HTML ID/API互換、v4.2整合、APK必須権限を自動検査済み。
+
+これはCI結果であり、Galaxy A22 5G / Android 13とiPad Safariの実機試験は未完了。
+
 ## 合格基準
 
 - iPadとPCが同じAndroidから同時に映像・音声を受信する。
