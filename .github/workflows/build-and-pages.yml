@@ -1,14 +1,14 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase, rebuild-v3.9-camera-controls-stability, rebuild-v4.0-ambient-audio-ptt, rebuild-v4.1-complete-stable]
+    branches: [main, rebuild-v3.5-remote-standby, rebuild-v3.6-wide-stable-location, rebuild-v3.7-stability-ui, rebuild-v3.8-realtime-stability-no-firebase, rebuild-v3.9-camera-controls-stability, rebuild-v4.0-ambient-audio-ptt, rebuild-v4.1-complete-stable, rebuild-v4.2-multi-viewer-camera]
     paths:
       - "android/**"
       - "web/**"
       - "gas/**"
       - ".github/workflows/**"
   pull_request:
-    branches: [rebuild-v3.9-camera-controls-stability, rebuild-v4.0-ambient-audio-ptt]
+    branches: [rebuild-v3.9-camera-controls-stability, rebuild-v4.0-ambient-audio-ptt, rebuild-v4.1-complete-stable]
     paths:
       - "android/**"
       - "web/**"
@@ -110,7 +110,7 @@ jobs:
             throw new Error('Optional location permission or dual-provider location acquisition is missing.');
           }
           if (!rtc.includes('Live FPS/bitrate updates do not restart Camera2') ||
-              !rtc.includes('Close stale sessions after') ||
+              rtc.includes('Close stale sessions after') ||
               !rtc.includes('Ignoring duplicate offer for active session') ||
               !rtc.includes('onCameraDisconnected()') ||
               !rtc.includes('onCameraFreezed(') ||
@@ -165,21 +165,21 @@ jobs:
             throw new Error('v3.8 WebRTC control channel, video-frame watchdog, local audio gain or UI indicator is missing.');
           }
           if (!rtc.includes('override fun onDataChannel(channel: DataChannel)') ||
-              !rtc.includes('onControlCommand(message)') ||
+              !rtc.includes('onControlCommand(sessionId, message)') ||
               !rtc.includes('fun hasConnectedPeer()') ||
               !rtc.includes('delay(8000L)')) {
             throw new Error('v3.8 Android data-channel command receiver or ICE recovery grace timer is missing.');
           }
-          if (!android.includes('" (v4.1 Preview)"') ||
-              !manifest.includes('android:label="Remote Camera 4.1 Preview"')) {
+          if (!android.includes('" (v4.2 Preview)"') ||
+              !manifest.includes('android:label="Remote Camera 4.2 Preview"')) {
             throw new Error('v3.8 preview app must be clearly distinguishable in Android launcher and paired-device list.');
           }
-          if (!android.includes('rtc?.hasConnectedPeer() == true') ||
+          if (android.includes('Once WebRTC is healthy, stop polling GAS') ||
               !android.includes('locationRequestActive') ||
               !android.includes('now - cached.time <= 60000L') ||
               !android.includes('withTimeoutOrNull(8000L)') ||
               !android.includes('GAS一時エラー：待機を継続して再試行します')) {
-            throw new Error('v3.8 GAS polling pause, retry backoff or faster serialized location acquisition is missing.');
+            throw new Error('v4.2 must keep accepting new viewer offers while preserving retry backoff and serialized location acquisition.');
           }
           if (!apiClient.includes('retryableActions') ||
               !apiClient.includes('connectTimeout = 8000') ||
@@ -225,11 +225,11 @@ jobs:
               !android.includes('EXTRA_LOCAL_DATA_MODE') ||
               !android.includes('"flashlight" ->') ||
               !android.includes('put("type", "command_result")') ||
-              !android.includes('v4.1 Preview')) {
+              !android.includes('v4.2 Preview')) {
             throw new Error('v3.9 Android local standby data-mode selector or command response flow is missing.');
           }
           if (!gas.includes('captureRatio:') || !gas.includes('fpsLimit:') ||
-              !gas.includes('"flashlight"') || !gas.includes('4.1.0')) {
+              !gas.includes('"flashlight"') || !gas.includes('4.2.0')) {
             throw new Error('v3.9 GAS compatibility, saved capture settings or flashlight command is missing.');
           }
           if (!main.includes('audioPickupModeSpinner') ||
@@ -260,7 +260,7 @@ jobs:
           console.log('v4.1 mic presets, connection-safe preset changes, PTT safety, keyboard input and audio diagnostics OK.');
           console.log('v3.9 inherited camera, fullscreen, flashlight, background standby and WebRTC features OK.');
           NODE
-      - name: Verify v4.1 Android and Web version alignment
+      - name: Verify v4.2 multi-viewer and version alignment
         run: |
           node <<'NODE'
           const fs = require('fs');
@@ -268,15 +268,87 @@ jobs:
           const config = JSON.parse(fs.readFileSync('web/config.json', 'utf8'));
           const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
           const workflow = fs.readFileSync('.github/workflows/build-and-pages.yml', 'utf8');
-          if (!/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v41preview"/.test(gradle) ||
-              !/versionCode\s*=\s*410/.test(gradle) ||
-              !/versionName\s*=\s*"4\.1\.0"/.test(gradle) ||
-              config.appVersion !== '4.1.0' ||
-              !manifest.includes('android:label="Remote Camera 4.1 Preview"') ||
-              !workflow.includes('\n          name: remote-camera-debug-apk-v4.1\n          path: android/app/build/outputs/apk/debug/app-debug.apk')) {
-            throw new Error('Android versionCode/versionName, Web appVersion, and APK artifact name must all identify v4.1.0.');
+          const app = fs.readFileSync('web/app.js', 'utf8');
+          const html = fs.readFileSync('web/index.html', 'utf8');
+          const gas = fs.readFileSync('gas/Code.gs', 'utf8');
+          const rtc = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/RtcEngine.kt', 'utf8');
+          const service = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/MonitorService.kt', 'utf8');
+          const bookmarklet = fs.readFileSync('web/preview/bookmarklet-ui-v4.2.js', 'utf8');
+          if (!/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v42preview"/.test(gradle) ||
+              !/versionCode\s*=\s*420/.test(gradle) ||
+              !/versionName\s*=\s*"4\.2\.0"/.test(gradle) ||
+              config.appVersion !== '4.2.0' ||
+              !gas.includes('const version = "4.2.0"') ||
+              !manifest.includes('android:label="Remote Camera 4.2 Preview"') ||
+              !workflow.includes('name: remote-camera-debug-apk-v4.2')) {
+            throw new Error('Android / Web / GAS / APK artifact versions are not aligned to v4.2.0.');
           }
-          console.log('Android 4.1.0 / versionCode 410 / Web 4.1.0 / APK artifact v4.1 are aligned.');
+          if (!gas.includes('Controllers: ["controllerId"') ||
+              !gas.includes('function getControllers_') ||
+              !gas.includes('function viewerPing_') ||
+              !gas.includes('MAX_VIEWERS = 3') ||
+              !gas.includes('migrateLegacyController_') ||
+              !app.includes('api("get_controllers"') ||
+              !app.includes('api("viewer_ping"') ||
+              !app.includes('rc_paired_devices_v42')) {
+            throw new Error('v4.2 viewer identity, migration, capacity or presence API is incomplete.');
+          }
+          if (!rtc.includes('maxConcurrentViewers = 3') ||
+              rtc.includes('The service is a single-viewer camera') ||
+              rtc.includes('Close stale sessions after') ||
+              !rtc.includes('onControlCommand(sessionId, message)') ||
+              !rtc.includes('sendControlMessage(message: JSONObject, sessionId: String? = null)') ||
+              !service.includes('closeSession(peerSessionId)') ||
+              service.includes('Once WebRTC is healthy, stop polling GAS')) {
+            throw new Error('Android session isolation, multi-peer limit or GAS signal polling is incorrect.');
+          }
+          for (const id of ['viewers','viewerCount','motionEnabled','motionSensitivity','motionNotifications','motionEvents','motionRows','exportMotionEvents']) {
+            if (!html.includes('id="' + id + '"')) throw new Error('Missing v4.2 UI element: ' + id);
+          }
+          if (!app.includes('function startMotionDetection') ||
+              !app.includes('function recordMotionEvent') ||
+              !app.includes('function exportMotionEvents') ||
+              !app.includes('function startViewerHeartbeat') ||
+              !bookmarklet.includes('web/index.html') ||
+              !bookmarklet.includes('Remote Camera v4.2')) {
+            throw new Error('v4.2 motion detection, event export, viewer heartbeat or bookmarklet is missing.');
+          }
+          if (!app.includes('function notifyBookmarkletPanel') ||
+              !app.includes('notifyBookmarkletPanel("expand-image")') ||
+              !app.includes('notifyBookmarkletPanel("restore-panel")') ||
+              !bookmarklet.includes('remote-camera-v42-bookmarklet') ||
+              !bookmarklet.includes('event.source !== frame.contentWindow') ||
+              !bookmarklet.includes('image-fullscreen')) {
+            throw new Error('Bookmarklet image view must expand the parent panel safely and restore it on close.');
+          }
+          if (!app.includes('reason.includes("上限")') ||
+              !app.includes('scheduleReconnect(S.pc)') ||
+              !rtc.includes('private fun failSession(sessionId: String, reason: String)') ||
+              !rtc.includes('SDP Offer受信失敗') ||
+              !rtc.includes('PeerConnection.IceConnectionState.FAILED ->') ||
+              !rtc.includes('closeSession(sessionId)')) {
+            throw new Error('Session-local SDP error cleanup or max-viewer rejection handling is missing.');
+          }
+          for (const id of ['imageViewerDialog','imageViewerImage','imageViewerTitle','imageViewerDownload','imageViewerFullscreen','imageViewerClose']) {
+            if (!html.includes('id="' + id + '"')) throw new Error('Missing received-image viewer element: ' + id);
+          }
+          if (!app.includes('function openImageViewer') ||
+              !app.includes('function saveImageViewer') ||
+              !app.includes('function toggleImageFullscreen') ||
+              !app.includes('ICE候補の収集が25秒以内に完了') ||
+              !app.includes('session-scoped GAS bye') ||
+              !app.includes('function storageGet(') ||
+              !app.includes('function storageSet(') ||
+              !app.includes('function storageRemove(') ||
+              !app.includes('storageSet(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents))') ||
+              !app.includes('function formatDuration(') ||
+              app.includes('async function formatDuration') ||
+              !app.includes('URL.revokeObjectURL') ||
+              !app.includes('Use both transports before revoking this viewer token') ||
+              app.includes('async function formatDuration')) {
+            throw new Error('v4.2 received-image viewer, local storage fallback or connection stability guard is missing.');
+          }
+          console.log('v4.2 multi-viewer, motion detection, received-image fullscreen, storage fallback, session cleanup and version checks passed.');
           NODE
       - name: Build Android debug APK
         working-directory: android
@@ -300,7 +372,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: remote-camera-debug-apk-v4.1
+          name: remote-camera-debug-apk-v4.2
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

@@ -33,13 +33,14 @@ class RtcEngine(
     private val audioPickupMode: String,
     private val scope: CoroutineScope,
     private val onState: (String) -> Unit,
-    private val onControlCommand: (JSONObject) -> Unit = {}
+    private val onControlCommand: (String, JSONObject) -> Unit = { _, _ -> }
 ) {
     private val peers = ConcurrentHashMap<String, PeerConnection>()
     private val videoSenders = ConcurrentHashMap<String, RtpSender>()
     private val dataChannels = ConcurrentHashMap<String, DataChannel>()
     private val iceStates = ConcurrentHashMap<String, PeerConnection.IceConnectionState>()
     private val disconnectTimers = ConcurrentHashMap<String, Job>()
+    private val maxConcurrentViewers = 3
     private var factory: PeerConnectionFactory? = null
     private var audioDeviceModule: AudioDeviceModule? = null
     private var egl: EglBase? = null
@@ -360,6 +361,7 @@ class RtcEngine(
         onState("カメラ・マイクを起動しました")
     }
 
+    @Synchronized
     fun handleOffer(sessionId: String, sdp: String) {
         try {
             val networkStateGranted =
@@ -375,6 +377,19 @@ class RtcEngine(
             // camera/peer connection for a duplicate offer with the same session ID.
             if (peers.containsKey(sessionId)) {
                 Log.i("RemoteCameraRTC", "Ignoring duplicate offer for active session " + sessionId)
+                return
+            }
+            if (peers.size >= maxConcurrentViewers) {
+                val reason = "同時監視の上限（" + maxConcurrentViewers + "台）に達しています。別の閲覧端末を切断してから再接続してください。"
+                onState(reason)
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        api.call("send_signal", JSONObject()
+                            .put("deviceId", deviceId).put("deviceSecret", secret)
+                            .put("sessionId", sessionId).put("recipient", "viewer")
+                            .put("kind", "error").put("sdp", reason))
+                    } catch (_: Exception) {}
+                }
                 return
             }
             ensureMedia()
@@ -423,16 +438,20 @@ class RtcEngine(
                                 if (previous != null) timer.cancel()
                             }
                         }
-                        PeerConnection.IceConnectionState.FAILED,
+                        PeerConnection.IceConnectionState.FAILED -> {
+                            disconnectTimers.remove(sessionId)?.cancel()
+                            onState("この閲覧端末のWebRTC接続に失敗しました。セッションを解放します")
+                            closeSession(sessionId)
+                        }
                         PeerConnection.IceConnectionState.CLOSED -> {
                             disconnectTimers.remove(sessionId)?.cancel()
-                            peers.remove(sessionId)
+                            val removed = peers.remove(sessionId) != null
                             videoSenders.remove(sessionId)
                             dataChannels.remove(sessionId)?.let {
                                 try { it.close() } catch (_: Exception) {}
                             }
                             iceStates.remove(sessionId)
-                            if (peers.isEmpty()) stopMedia()
+                            if (removed && peers.isEmpty()) stopMedia()
                         }
                         else -> Unit
                     }
@@ -472,9 +491,9 @@ class RtcEngine(
                                 val message = JSONObject(String(bytes, Charsets.UTF_8))
                                 if (message.optString("type") == "command") {
                                     if (message.optString("name") == "get_device_status") {
-                                        sendDeviceStatus(message.optString("requestId"))
+                                        sendDeviceStatus(message.optString("requestId"), sessionId)
                                     } else {
-                                        onControlCommand(message)
+                                        onControlCommand(sessionId, message)
                                     }
                                 }
                             } catch (e: Exception) {
@@ -490,26 +509,7 @@ class RtcEngine(
                 ?: error("PeerConnectionを作成できません。")
             peers[sessionId] = peer
 
-            // The service is a single-viewer camera. Close stale sessions after
-            // registering the new peer so their CLOSED callbacks do not dispose
-            // the shared camera tracks used by the replacement session.
-            peers.entries.toList().forEach { entry ->
-                val oldSession = entry.key
-                val oldPeer = entry.value
-                if (oldSession != sessionId && peers.remove(oldSession, oldPeer)) {
-                    disconnectTimers.remove(oldSession)?.cancel()
-                    dataChannels.remove(oldSession)?.let {
-                        try { it.close() } catch (_: Exception) {}
-                    }
-                    iceStates.remove(oldSession)
-                    videoSenders.remove(oldSession)
-                    try { oldPeer.close() } catch (e: Exception) {
-                        Log.w("RemoteCameraRTC", "Could not close stale peer " + oldSession, e)
-                    }
-                }
-            }
-
-            videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
+videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
             peer.addTrack(audioTrack, listOf("remote-camera"))
             applySenderParameters(profileFor(currentQuality, currentDataMode))
             peer.setRemoteDescription(object : SdpObserver {
@@ -518,19 +518,31 @@ class RtcEngine(
                         override fun onCreateSuccess(answer: SessionDescription) {
                             peer.setLocalDescription(object : SdpObserver {
                                 override fun onSetSuccess() { onState("接続応答を作成中…") }
-                                override fun onSetFailure(error: String) { onState("SDP設定失敗: $error") }
+                                override fun onSetFailure(error: String) {
+                                    failSession(sessionId, "SDPローカル設定失敗: $error")
+                                }
                                 override fun onCreateSuccess(desc: SessionDescription) {}
-                                override fun onCreateFailure(error: String) {}
+                                override fun onCreateFailure(error: String) {
+                                    failSession(sessionId, "SDPローカル作成失敗: $error")
+                                }
                             }, answer)
                         }
-                        override fun onCreateFailure(error: String) { onState("SDP応答作成失敗: $error") }
+                        override fun onCreateFailure(error: String) {
+                            failSession(sessionId, "SDP応答作成失敗: $error")
+                        }
                         override fun onSetSuccess() {}
-                        override fun onSetFailure(error: String) {}
+                        override fun onSetFailure(error: String) {
+                            failSession(sessionId, "SDP応答設定失敗: $error")
+                        }
                     }, MediaConstraints())
                 }
-                override fun onSetFailure(error: String) { onState("SDP受信失敗: $error") }
+                override fun onSetFailure(error: String) {
+                    failSession(sessionId, "SDP Offer受信失敗: $error")
+                }
                 override fun onCreateSuccess(desc: SessionDescription) {}
-                override fun onCreateFailure(error: String) {}
+                override fun onCreateFailure(error: String) {
+                    failSession(sessionId, "SDP Offer作成失敗: $error")
+                }
             }, SessionDescription(SessionDescription.Type.OFFER, sdp))
         } catch (e: Exception) {
             Log.e("RemoteCameraRTC", "Offer processing failed; cleaning partial RTC state", e)
@@ -551,6 +563,25 @@ class RtcEngine(
         }
     }
 
+    private fun failSession(sessionId: String, reason: String) {
+        Log.e("RemoteCameraRTC", "Releasing failed session " + sessionId + ": " + reason)
+        closeSession(sessionId)
+        onState("WebRTCセッション失敗： " + reason + "。他の閲覧端末の接続は維持します")
+        scope.launch(Dispatchers.IO) {
+            try {
+                api.call("send_signal", JSONObject()
+                    .put("deviceId", deviceId)
+                    .put("deviceSecret", secret)
+                    .put("sessionId", sessionId)
+                    .put("recipient", "viewer")
+                    .put("kind", "error")
+                    .put("sdp", reason))
+            } catch (error: Exception) {
+                Log.w("RemoteCameraRTC", "Could not notify viewer about failed session", error)
+            }
+        }
+    }
+
     @Synchronized
     fun closeSession(sessionId: String) {
         disconnectTimers.remove(sessionId)?.cancel()
@@ -564,6 +595,8 @@ class RtcEngine(
     }
 
     fun hasPeers(): Boolean = peers.isNotEmpty()
+
+    fun viewerCount(): Int = peers.size
 
     fun hasConnectedPeer(): Boolean = iceStates.entries.any { entry ->
         val connected = entry.value == PeerConnection.IceConnectionState.CONNECTED ||
@@ -611,9 +644,11 @@ class RtcEngine(
         }
     }
 
-    fun sendControlMessage(message: JSONObject) {
+    fun sendControlMessage(message: JSONObject, sessionId: String? = null) {
         val bytes = message.toString().toByteArray(Charsets.UTF_8)
-        dataChannels.values.forEach { channel ->
+        val targets = if (sessionId.isNullOrBlank()) dataChannels.values.toList()
+            else listOfNotNull(dataChannels[sessionId])
+        targets.forEach { channel ->
             if (channel.state() == DataChannel.State.OPEN) {
                 try { channel.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false)) }
                 catch (e: Exception) { Log.w("RemoteCameraRTC", "Could not send control response", e) }
@@ -621,7 +656,7 @@ class RtcEngine(
         }
     }
 
-    private fun sendDeviceStatus(requestId: String) {
+    private fun sendDeviceStatus(requestId: String, sessionId: String) {
         val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
         val battery = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -642,7 +677,8 @@ class RtcEngine(
             .put("batteryTempC", if (temperature >= 0) temperature / 10.0 else JSONObject.NULL)
             .put("flashlightAvailable", flashAvailable)
             .put("flashlightOn", flashlightEnabled)
-            .put("cameraFacing", if (frontCamera) "front" else "back")
+            .put("cameraFacing", if (frontCamera) "front" else "back"),
+            sessionId
         )
     }
 

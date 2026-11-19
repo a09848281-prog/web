@@ -1,0 +1,56 @@
+name: Deploy Remote Camera v4.2 Preview
+
+on:
+  push:
+    branches:
+      - rebuild-v4.2-multi-viewer-camera
+    paths:
+      - "web/**"
+      - ".github/workflows/deploy-pages-v42-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Serialize production/preview deployments. Never cancel an in-flight rollback.
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      # A separate environment avoids a default-branch-only protection rule
+      # on the production github-pages environment from rejecting this preview.
+      name: github-pages-v42-preview
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout v4.2 branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Validate deployable web files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s web/index.html
+          test -s web/app.js
+          test -s web/app.css
+          test -s web/config.json
+          node --check web/app.js
+          node -e 'const c=require("./web/config.json"); if(c.appVersion!=="4.2.0" || !c.gasUrl.endsWith("/exec")) process.exit(1)'
+      - name: Upload v4.2 website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - name: Deploy v4.2 website
+        id: deployment
+        uses: actions/deploy-pages@v4

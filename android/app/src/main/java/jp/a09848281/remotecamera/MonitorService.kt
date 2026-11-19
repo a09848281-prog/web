@@ -306,13 +306,6 @@ class MonitorService : Service() {
             if (!apiReady.isCompleted) apiReady.complete(Unit)
             var consecutiveFailures = 0
             while (scope.isActive) {
-                // Once WebRTC is healthy, stop polling GAS. Active controls use
-                // the peer-to-peer data channel; if ICE drops, the loop resumes
-                // GAS polling after RtcEngine marks the peer disconnected.
-                if (rtc?.hasConnectedPeer() == true) {
-                    delay(1000L)
-                    continue
-                }
                 try {
                     val deviceId = prefs.getString("deviceId", "") ?: ""
                     val secret = prefs.getString("deviceSecret", "") ?: ""
@@ -374,19 +367,24 @@ class MonitorService : Service() {
                                         recycleRtcForPendingAudioModeIfIdle()
                                         if (rtc == null) {
                                             val currentApi = api ?: continue
-                                            rtc = RtcEngine(this, currentApi, deviceId, secret, audioPickupMode, scope, ::notifyState) { message ->
+                                            rtc = RtcEngine(this, currentApi, deviceId, secret, audioPickupMode, scope, ::notifyState) { peerSessionId, message ->
                                                 val name = message.optString("name")
                                                 val payload = message.optJSONObject("payload") ?: JSONObject()
                                                 val requestId = message.optString("requestId")
                                                 val command = JSONObject().put("command", name).put("payload", payload)
                                                 scope.launch {
-                                                    val success = processCommand(command)
-                                                    rtc?.sendControlMessage(JSONObject()
-                                                        .put("type", "command_result")
-                                                        .put("requestId", requestId)
-                                                        .put("name", name)
-                                                        .put("success", success)
-                                                        .put("payload", payload))
+                                                    if (name == "disconnect") {
+                                                        rtc?.closeSession(peerSessionId)
+                                                        notifyState("閲覧端末を切断しました。残り " + (rtc?.viewerCount() ?: 0) + "/3 台")
+                                                    } else {
+                                                        val success = processCommand(command)
+                                                        rtc?.sendControlMessage(JSONObject()
+                                                            .put("type", "command_result")
+                                                            .put("requestId", requestId)
+                                                            .put("name", name)
+                                                            .put("success", success)
+                                                            .put("payload", payload), peerSessionId)
+                                                    }
                                                 }
                                             }
                                             rtcAudioPickupMode = audioPickupMode
@@ -433,6 +431,8 @@ class MonitorService : Service() {
                     val retryDelay = (1000L * (1L shl consecutiveFailures.coerceAtMost(4))).coerceAtMost(15000L)
                     delay(retryDelay)
                 } else {
+                    // Keep accepting new viewer offers while honoring the selected
+                    // standby polling profile to avoid unexpected battery / GAS quota use.
                     val waitSeconds = when (prefs.getString("waitMode", "standard")) {
                         "eco" -> 30L
                         "fast" -> 2L
@@ -452,7 +452,7 @@ class MonitorService : Service() {
         var secret = prefs.getString("deviceSecret", "") ?: ""
         if (id.isBlank() || secret.isBlank()) {
             id = UUID.randomUUID().toString()
-            val response = api!!.call("device_begin", JSONObject().put("deviceId", id).put("deviceName", (Build.MODEL ?: "Android") + " (v4.1 Preview)"))
+            val response = api!!.call("device_begin", JSONObject().put("deviceId", id).put("deviceName", (Build.MODEL ?: "Android") + " (v4.2 Preview)"))
             secret = response.getString("deviceSecret")
             prefs.edit().putString("deviceId", id).putString("deviceSecret", secret)
                 .putBoolean("serverPaired", false).putInt("afterSeq", 0).apply()
@@ -564,10 +564,9 @@ class MonitorService : Service() {
                     engine.setFlashlight(payload.optBoolean("enabled", false))
                 }
                 "disconnect" -> {
-                    rtc?.dispose()
-                    rtc = null
-                    rtcAudioPickupMode = null
-                    notifyState("監視待機中")
+                    // v4.2 disconnects are scoped to a WebRTC session in the data-channel handler.
+                    // A legacy GAS disconnect command must never terminate other viewers.
+                    notifyState("他の閲覧端末の接続を維持しています")
                 }
             }
         } catch (e: Exception) {

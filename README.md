@@ -1,5 +1,43 @@
 # Android・iPad 遠隔監視カメラシステム
 
+## v4.2.0 複数端末同時監視プレビュー（実機検証前）
+
+開発ブランチ：rebuild-v4.2-multi-viewer-camera  
+ベース：v4.1完全統合プレビュー  
+Android applicationId：jp.a09848281.remotecamera.v42preview  
+Android versionCode：420 / versionName：4.2.0  
+Web / GAS API：4.2.0 / Firebase不使用
+
+### v4.2追加機能・安定性改善
+1. 1台のAndroidを最大3台のiPad・PCから同時監視。
+2. 閲覧端末ごとに独立したペアリング・認証情報・切断。1台の切断は他端末に影響しない。
+3. 登録済み閲覧端末の一覧、名前、オンライン確認状況、最終応答時刻。
+4. ブラウザー内での動体検知（低 / 標準 / 高）。
+5. 検知静止画・イベント履歴・CSV出力・許可制ブラウザー通知。
+6. 受信静止画・動体検知画像を画面全体で確認できる画像ビューアー（画像保存・閉じる・対応環境でのネイティブ全画面）。ブックマークレットでも親パネルを自動拡張。
+7. ICE候補未収集時のOffer送信抑止、二経路のセッション終了通知、ブラウザー保存領域の例外対策。
+8. AndroidでSDP応答処理に失敗したPeerConnectionだけを解放し、他の閲覧端末を維持。4台目の上限拒否ではWeb側の待機接続を終了。
+
+動体検知は閲覧ブラウザー内のみで解析し、イベント画像をGASへ送信しません。背景タブや画面ロック中の継続は保証されません。最大3台は同時接続の安全上限で、端末性能・ネットワーク帯域によっては画質調整が必要です。
+
+### v4.2 公開URL
+
+https://a09848281-prog.github.io/web/
+
+GitHub Pages v4.2デプロイは成功済み。元のmain版へ戻す方法は [公開・ロールバック手順](docs/PAGES-ROLLBACK-v4.2.0.md) を参照。
+
+### v4.2ドキュメント
+- docs/REMOTE-CAMERA-v4.2-SPEC.md
+- docs/QUICKSTART-v4.2.0.md
+- docs/GAS-REDEPLOY-v4.2.0.md
+- docs/TEST-PLAN-v4.2.0.md
+- docs/BOOKMARKLET-v4.2-UI.md
+- docs/PAGES-ROLLBACK-v4.2.0.md
+- docs/BUILD-REPORT-v4.2.0.md
+
+---
+
+
 ## v4.1.0 完全統合プレビュー（実機検証前）
 
 作業ブランチ：`rebuild-v4.1-complete-stable`  

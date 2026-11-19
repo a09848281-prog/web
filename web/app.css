@@ -90,3 +90,59 @@
 @media(max-width:650px){.audioMeterLabel{flex:1 1 100%;min-height:34px}}
 
 .audioControlHint{font-size:11px;color:#75849a;flex:1 1 100%;margin:1px 0 3px}
+
+/* v4.2 multi-viewer management and opt-in local motion detection */
+.viewerCount{margin:6px 0;color:#52647b;font-size:12px;font-weight:700}
+.viewerrow,.motionrow{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #e1e7ef}
+.viewerrow b{display:block;font-size:13px}
+.viewerrow small{display:block;color:#687991;font-size:11px;margin-top:4px}
+.motionTools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;background:#f4f7fb;border:1px solid #e1e7f0;border-radius:12px}
+.motionTools label{display:flex;align-items:center;gap:6px;margin:0;font-size:12px;color:#52647b}
+.motionTools select{width:auto;min-width:72px;padding:7px}
+.motionTools button{min-height:34px;padding:6px 10px;font-size:12px}
+.motionToggle{font-weight:800!important;color:#1d4d9b!important}
+#motionState{font-size:11px;color:#66758b;flex:1 1 150px}
+.motionrow{align-items:center;font-size:12px}
+.motionrow a{white-space:nowrap;color:#2456a3;font-weight:700}
+@media(max-width:650px){.motionTools{gap:8px}.motionTools label{flex:1 1 auto}#motionState{flex:1 1 100%}.viewerrow,.motionrow{flex-wrap:wrap}}
+
+
+/* v4.2 received-image viewer: viewport-filling on touch devices and desktop */
+.imageViewerDialog[open]{
+  position:fixed;inset:0;margin:0;padding:0;width:100vw;max-width:none;
+  height:100vh;height:100dvh;max-height:none;border:0;border-radius:0;
+  background:#05080d;color:#fff;overflow:hidden
+}
+.imageViewerDialog::backdrop{background:#05080d}
+.imageViewer{width:100%;height:100%;display:flex;flex-direction:column;min-height:0}
+.imageViewerHeader{
+  flex:0 0 auto;min-height:54px;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;padding:8px 12px;background:#101827;color:#fff;
+  padding-top:max(8px,env(safe-area-inset-top))
+}
+.imageViewerHeader strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.imageViewerHeader>div{display:flex;gap:6px;flex-shrink:0}
+.imageViewerHeader button{min-height:36px;padding:7px 10px;background:#263750;color:#fff;font-size:12px}
+.imageViewerHeader button:disabled{opacity:.45}
+.imageViewerStage{
+  flex:1;min-height:0;display:grid;place-items:center;width:100%;
+  padding:8px 8px max(8px,env(safe-area-inset-bottom));overflow:hidden;
+  background:#05080d;touch-action:pan-y
+}
+.imageViewerStage img{
+  display:block;max-width:100%;max-height:100%;width:auto;height:auto;
+  object-fit:contain;user-select:none;-webkit-user-drag:none
+}
+.motionThumb{
+  display:flex;align-items:center;gap:7px;padding:5px 8px;min-height:54px;
+  border:1px solid #d8e1ed;background:#f5f8fc;color:#2456a3;font-size:11px
+}
+.motionThumb img{
+  width:64px;height:44px;object-fit:cover;border-radius:5px;background:#0b1422
+}
+.motionrow a{align-self:center}
+@media(max-width:560px){
+  .imageViewerHeader{gap:5px;padding-left:8px;padding-right:8px}
+  .imageViewerHeader button{padding:6px 8px;font-size:11px;min-height:34px}
+  .imageViewerStage{padding:4px 4px max(4px,env(safe-area-inset-bottom))}
+}

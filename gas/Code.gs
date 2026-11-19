@@ -1,5 +1,5 @@
 /**
- * Remote Camera GAS API v4.1
+ * Remote Camera GAS API v4.2
  * Account-free camera-first API.
  * Web controller access is granted only by an expiring Android pairing code.
  */
@@ -9,8 +9,10 @@ const TABLES = {
   Signals: ["seq","sessionId","deviceId","sender","recipient","kind","sdp","candidateJson","createdAt","expiresAt"],
   Settings: ["deviceId","settingsJson","updatedAt"],
   LocationHistory: ["locationId","userId","deviceId","lat","lng","accuracy","timestamp","mode"],
-  SecurityLog: ["timestamp","userId","deviceId","eventType","success","detail"]
+  SecurityLog: ["timestamp","userId","deviceId","eventType","success","detail"],
+  Controllers: ["controllerId","deviceId","controllerName","tokenHash","createdAt","lastSeen","status"]
 };
+const MAX_VIEWERS = 3;
 const SESSION_DAYS = 7;
 const CODE_MINUTES = 10;
 const COMMAND_MINUTES = 3;
@@ -27,7 +29,7 @@ function doGet() {
 }
 
 function health_() {
-  const version = "4.1.0";
+  const version = "4.2.0";
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty("DB_SPREADSHEET_ID");
   if (!spreadsheetId) {
     return {
@@ -79,32 +81,39 @@ function doPost(e) {
     result = dispatch_(req);
     if (!result || typeof result !== "object") result = { ok: true, value: result };
     result.serverMs = Date.now() - startedAt;
-    result.apiVersion = "4.1.0";
+    result.apiVersion = "4.2.0";
   } catch (err) {
     result = {
       ok: false,
       error: safeError_(err),
       serverMs: Date.now() - startedAt,
-      apiVersion: "4.1.0"
+      apiVersion: "4.2.0"
     };
   }
   if (params.mode === "json") {
     return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
   }
-  return bridge_(req.requestId || "", result);
+  return bridge_(req.requestId || "", result, req.clientOrigin || "");
 }
 
 /**
  * Google HtmlService is sandboxed. Post to the top-level GitHub Pages origin,
  * not to the intermediate sandbox parent.
  */
-function bridge_(id, result) {
+function bridge_(id, result, clientOrigin) {
+  const allowedOrigins = [
+    "https://a09848281-prog.github.io",
+    "https://cdn.jsdelivr.net"
+  ];
+  const targetOrigin = allowedOrigins.includes(String(clientOrigin || ""))
+    ? String(clientOrigin)
+    : allowedOrigins[0];
   const json = JSON.stringify({
     channel: "remote-camera-gas", requestId: String(id || ""), result: result
   }).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
   return HtmlService.createHtmlOutput(
     "<!doctype html><html><head><meta charset='utf-8'></head><body>" +
-    "<script>window.top.postMessage(" + json + ",'https://a09848281-prog.github.io');</script>" +
+    "<script>window.top.postMessage(" + json + "," + JSON.stringify(targetOrigin) + ");</script>" +
     "<p>処理が完了しました。</p></body></html>"
   ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -116,6 +125,8 @@ function dispatch_(r) {
     case "device_refresh_code": return refreshDeviceCode_(r);
     case "claim_device": return claimDevice_(r);
     case "unpair_device": return unpairDevice_(r);
+    case "get_controllers": return getControllers_(r);
+    case "viewer_ping": return viewerPing_(r);
     case "device_poll": return devicePoll_(r);
     case "send_signal": return sendSignal_(r);
     case "poll_signals": return pollSignals_(r);
@@ -313,15 +324,58 @@ function authDevice_(deviceId, secret) {
   }
   return { deviceId: d.v[0], row: d.row, v: d.v };
 }
+function activeControllerRows_(deviceId) {
+  return rows_("Controllers").filter(function(v) {
+    return String(v[1]) === String(deviceId) && String(v[6]) === "active";
+  });
+}
+
+function migrateLegacyController_(device) {
+  const deviceId = String(device.v[0]);
+  const all = rows_("Controllers").some(function(v) {
+    return String(v[1]) === deviceId;
+  });
+  // Preserve v4.1 and earlier browser tokens when GAS is upgraded.
+  if (!all && device.v[10] && String(device.v[9]) === "active") {
+    append_("Controllers", [
+      Utilities.getUuid(), deviceId, "既存の閲覧端末", String(device.v[10]),
+      device.v[7] || now_(), device.v[8] || now_(), "active"
+    ]);
+    sheet_("Devices").getRange(device.row, 11).setValue("MULTI_VIEWER_V42");
+  }
+}
+
 function authController_(r) {
   const id = String(r.deviceId || "");
   const token = String(r.controllerToken || "");
   if (!id || !token) throw Error("Androidとのペアリングが必要です。");
   const d = find_("Devices", 0, id);
-  if (!d || d.v[9] !== "active" || !d.v[10] || hash_(token) !== d.v[10]) {
-    throw Error("操作権限がありません。Androidのペアリングコードで再接続してください。");
+  if (!d || d.v[9] !== "active") {
+    throw Error("Android端末が登録されていません。再ペアリングしてください。");
   }
-  return { deviceId: d.v[0], row: d.row, v: d.v };
+  migrateLegacyController_(d);
+  const tokenHash = hash_(token);
+  const list = rows_("Controllers");
+  let hit = null;
+  for (let i = 0; i < list.length; i++) {
+    const v = list[i];
+    if (String(v[1]) === id && String(v[3]) === tokenHash && String(v[6]) === "active") {
+      hit = { row: i + 2, v: v };
+      break;
+    }
+  }
+  if (!hit) throw Error("この閲覧端末の操作権限がありません。Androidの8桁コードで再登録してください。");
+  const cache = CacheService.getScriptCache();
+  const seenKey = "controller_seen_" + String(hit.v[0]);
+  if (!cache.get(seenKey)) {
+    sheet_("Controllers").getRange(hit.row, 6).setValue(now_());
+    cache.put(seenKey, "1", 45);
+  }
+  return {
+    deviceId: id, row: d.row, v: d.v,
+    controllerId: String(hit.v[0]), controllerRow: hit.row,
+    controllerName: String(hit.v[2] || "Web閲覧端末")
+  };
 }
 function ownerController_(r) { return authController_(r); }
 
@@ -365,6 +419,8 @@ function refreshDeviceCode_(r) {
 function claimDevice_(r) {
   const code = String(r.code || "").trim();
   if (!/^\d{8}$/.test(code)) throw Error("登録コードは8桁の数字です。");
+  const controllerName = String(r.controllerName || r.deviceName || "Web閲覧端末")
+    .trim().slice(0, 40) || "Web閲覧端末";
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   let deviceId = "";
@@ -375,7 +431,8 @@ function claimDevice_(r) {
     for (let i = 0; i < data.length; i++) {
       const v = data[i];
       const expiry = new Date(v[5]).getTime();
-      if (v[4] && v[4] === hash_(code) && expiry > Date.now() && ["pending", "active"].includes(String(v[9]))) {
+      if (v[4] && v[4] === hash_(code) && expiry > Date.now() &&
+          ["pending", "active"].includes(String(v[9]))) {
         hit = { row: i + 2, v: v };
         break;
       }
@@ -384,41 +441,55 @@ function claimDevice_(r) {
       log_("", "pair_claim", false, "invalid or expired code");
       throw Error("登録コードが無効または期限切れです。Android側で再発行してください。");
     }
-    const name = String(r.deviceName || hit.v[2] || "Android端末").trim().slice(0, 40) || "Android端末";
+    migrateLegacyController_(hit);
+    const activeCount = activeControllerRows_(String(hit.v[0])).length;
+    if (activeCount >= MAX_VIEWERS) {
+      throw Error("このAndroidの閲覧端末は最大" + MAX_VIEWERS + "台です。不要な端末の登録を解除してください。");
+    }
+    const controllerId = Utilities.getUuid();
     const controllerToken = randomToken_();
     const sh = sheet_("Devices");
-    sh.getRange(hit.row, 2).setValue("");
-    sh.getRange(hit.row, 3).setValue(name);
     sh.getRange(hit.row, 5, 1, 2).setValues([["", ""]]); // one-time code is consumed
     sh.getRange(hit.row, 8, 1, 3).setValues([[now_(), hit.v[8], "active"]]);
-    sh.getRange(hit.row, 11).setValue(hash_(controllerToken));
+    sh.getRange(hit.row, 11).setValue("MULTI_VIEWER_V42");
+    append_("Controllers", [
+      controllerId, String(hit.v[0]), controllerName, hash_(controllerToken),
+      now_(), now_(), "active"
+    ]);
     deviceId = String(hit.v[0]);
     clearPairRate_();
-    log_(deviceId, "pair_claim", true, "viewer paired");
-    return { ok: true, deviceId: deviceId, deviceName: name, controllerToken: controllerToken };
+    log_(deviceId, "pair_claim", true, "viewer paired: " + controllerName);
+    return {
+      ok: true, deviceId: deviceId,
+      deviceName: String(hit.v[2] || "Android端末"),
+      controllerId: controllerId, controllerName: controllerName,
+      controllerToken: controllerToken, viewerCount: activeCount + 1,
+      maxViewers: MAX_VIEWERS
+    };
   } finally {
     lock.releaseLock();
   }
 }
 
 function unpairDevice_(r) {
-  const d = authController_(r);
+  const controller = authController_(r);
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
+  let remaining = 0;
   try {
-    const current = find_("Devices", 0, d.deviceId);
-    if (!current || !current.v[10] || current.v[10] !== hash_(String(r.controllerToken || ""))) {
-      throw Error("ペアリング状態が変更されています。端末一覧を更新してください。");
-    }
-    const sh = sheet_("Devices");
-    sh.getRange(current.row, 5, 1, 2).clearContent();
-    sh.getRange(current.row, 10).setValue("pending");
-    sh.getRange(current.row, 11).clearContent();
+    sheet_("Controllers").getRange(controller.controllerRow, 7).setValue("revoked");
+    remaining = activeControllerRows_(controller.deviceId).length;
+    // Keep the MULTI_VIEWER_V42 migration marker even when the last viewer is revoked.
+    // Clearing it would allow a legacy v4.1 token hash to be migrated back into an active viewer.
   } finally {
     lock.releaseLock();
   }
-  log_(d.deviceId, "unpair_device", true, "controller pairing revoked");
-  return { ok: true, deviceId: d.deviceId, unpaired: true };
+  log_(controller.deviceId, "unpair_device", true,
+    "viewer revoked: " + controller.controllerName + "; remaining=" + remaining);
+  return {
+    ok: true, deviceId: controller.deviceId, unpaired: true,
+    remainingViewers: remaining, maxViewers: MAX_VIEWERS
+  };
 }
 
 function devicePoll_(r) {
@@ -468,6 +539,8 @@ function devicePoll_(r) {
     }
   }
 
+  migrateLegacyController_(d);
+  const activeViewerCount = activeControllerRows_(id).length;
   const settingsHit = find_("Settings", 0, id);
   let settings = { quality: "720", dataMode: "standard", captureRatio: "16:9", fpsLimit: 24, connectedLocationEnabled: false, idleLocationEnabled: false, connectedInterval: 30, idleInterval: 300 };
   if (settingsHit) {
@@ -475,7 +548,9 @@ function devicePoll_(r) {
   }
   return {
     ok: true, registered: true,
-    needsPairing: !d.v[10],
+    needsPairing: activeViewerCount === 0,
+    viewerCount: activeViewerCount,
+    maxViewers: MAX_VIEWERS,
     pairingCodeActive: !!d.v[4] && new Date(d.v[5]).getTime() > Date.now(),
     commands: commands,
     signals: signals,
@@ -561,6 +636,38 @@ function clamp_(value, min, max, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.round(number))) : fallback;
 }
+function viewerPing_(r) {
+  const controller = authController_(r);
+  return {
+    ok: true,
+    controllerId: controller.controllerId,
+    serverTime: now_().toISOString()
+  };
+}
+
+function getControllers_(r) {
+  const current = authController_(r);
+  const controllers = activeControllerRows_(current.deviceId).map(function(v) {
+    return {
+      controllerId: String(v[0]),
+      controllerName: String(v[2] || "Web閲覧端末"),
+      createdAt: iso_(v[4]),
+      lastSeen: iso_(v[5]),
+      online: v[5] ? (Date.now() - new Date(v[5]).getTime() <= 180000) : false,
+      current: String(v[0]) === current.controllerId
+    };
+  });
+  controllers.sort(function(a, b) {
+    return (a.current === b.current) ? String(a.controllerName).localeCompare(String(b.controllerName), "ja")
+      : (a.current ? -1 : 1);
+  });
+  return {
+    ok: true, controllers: controllers,
+    viewerCount: controllers.length, maxViewers: MAX_VIEWERS,
+    currentControllerId: current.controllerId
+  };
+}
+
 function getSettings_(r) {
   const d = authController_(r);
   const found = find_("Settings", 0, d.deviceId);
