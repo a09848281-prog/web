@@ -81,6 +81,7 @@ jobs:
           assert(rtc.includes('monitorMetricsProvider') && service.includes('TrafficStats.getUidRxBytes'), 'Android uptime and per-app traffic estimate are required');
           assert(rtc.includes('CameraAccessException.CAMERA_IN_USE') && rtc.includes('CameraAccessException.MAX_CAMERAS_IN_USE') && rtc.includes('isFlashlightOn()'), 'Torch retry and confirmed state are required');
           assert(service.includes('withTimeoutOrNull(4500L)') && service.includes('freshAfterCache'), 'Fast location cache and bounded refresh are required');
+          assert(/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v422preview"/.test(gradle), 'v4.2.2 must install alongside the previous preview');
           assert(/versionCode\s*=\s*422/.test(gradle) && /versionName\s*=\s*"4.2.2"/.test(gradle) && config.appVersion === '4.2.2', 'Version alignment failed');
           assert(!/firebase/i.test(gradle), 'Firebase must remain excluded');
           console.log('v4.2.2 Web / GAS / Android integration checks passed.');
