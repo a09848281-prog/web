@@ -1204,15 +1204,18 @@ function updateMotionZoneEditor() {
   const zone = selectedMotionZone();
   $("motionZoneName").disabled = !zone;
   $("motionZoneSensitivity").disabled = !zone;
+  $("motionZoneEnabled").disabled = !zone;
   $("saveMotionZone").disabled = !zone;
   $("deleteMotionZone").disabled = !zone;
   if (!zone) {
     $("motionZoneName").value = "";
     $("motionZoneSensitivity").value = "normal";
+    $("motionZoneEnabled").checked = false;
     return;
   }
   $("motionZoneName").value = zone.name;
   $("motionZoneSensitivity").value = zone.sensitivity;
+  $("motionZoneEnabled").checked = zone.enabled;
 }
 function selectMotionZone(id) {
   S.motionSelectedZoneId = id;
@@ -1225,6 +1228,7 @@ function saveSelectedMotionZone() {
   zone.name = name || "範囲";
   zone.sensitivity = ["low", "normal", "high"].includes($("motionZoneSensitivity").value)
     ? $("motionZoneSensitivity").value : "normal";
+  zone.enabled = $("motionZoneEnabled").checked;
   saveMotionZones();
   renderMotionZones();
   toast("検知範囲の設定を保存しました。");
@@ -1271,8 +1275,15 @@ function beginMotionZoneDrawing() {
 function motionOverlayPoint(event) {
   const rect = $("motionOverlay").getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
-  return { x: clamp01((event.clientX - rect.left) / rect.width),
-    y: clamp01((event.clientY - rect.top) / rect.height) };
+  // getBoundingClientRect includes the CSS zoom transform. Undo that transform
+  // so drawn regions still match the source video at 100–250% viewer zoom.
+  const zoom = Math.max(0.25, Number(S.zoom) || 1);
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  return {
+    x: clamp01((event.clientX - centerX) / (rect.width / zoom) + 0.5),
+    y: clamp01((event.clientY - centerY) / (rect.height / zoom) + 0.5)
+  };
 }
 function handleMotionPointerDown(event) {
   if (!S.motionDrawingEnabled || event.button !== 0) return;
@@ -1301,6 +1312,11 @@ function handleMotionPointerUp(event) {
     setMotionDrawingMode(false);
     toast("範囲が小さすぎます。もう一度ドラッグしてください。");
     return;
+  }
+  // The default full-screen zone is a fallback only. Replace it as soon as
+  // the user draws the first explicit area, otherwise it would keep detecting everywhere.
+  if (S.motionZones.length === 1 && S.motionZones[0].id === "full-screen") {
+    S.motionZones = [];
   }
   const zone = {
     id: "zone-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7),
@@ -2287,8 +2303,14 @@ document.addEventListener("visibilitychange", () => {
   if ($("motionEnabled").checked) { S.motionPrevious = null; startMotionDetection(); }
 });
 
-document.addEventListener("fullscreenchange", () => window.setTimeout(restoreRemotePlayback, 180));
-document.addEventListener("webkitfullscreenchange", () => window.setTimeout(restoreRemotePlayback, 180));
+document.addEventListener("fullscreenchange", () => {
+  window.setTimeout(restoreRemotePlayback, 180);
+  window.setTimeout(updateMotionOverlayLayout, 180);
+});
+document.addEventListener("webkitfullscreenchange", () => {
+  window.setTimeout(restoreRemotePlayback, 180);
+  window.setTimeout(updateMotionOverlayLayout, 180);
+});
 $("remoteVideo").addEventListener("webkitendfullscreen", () => window.setTimeout(restoreRemotePlayback, 350));
 window.addEventListener("pageshow", () => window.setTimeout(restoreRemotePlayback, 180));
 window.addEventListener("resize", () => {
@@ -2364,6 +2386,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("saveMotionZone").addEventListener("click", saveSelectedMotionZone);
   $("motionZoneName").addEventListener("change", saveSelectedMotionZone);
   $("motionZoneSensitivity").addEventListener("change", saveSelectedMotionZone);
+  $("motionZoneEnabled").addEventListener("change", saveSelectedMotionZone);
   $("deleteMotionZone").addEventListener("click", deleteSelectedMotionZone);
   $("motionOverlay").addEventListener("pointerdown", handleMotionPointerDown);
   $("motionOverlay").addEventListener("pointermove", handleMotionPointerMove);

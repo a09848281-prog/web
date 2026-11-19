@@ -75,7 +75,7 @@ jobs:
           assert(app.includes('MOTION_WIDTH = 160')&&app.includes('MAX_MOTION_ZONES = 8'),'Bounded local motion processing required');
           assert(app.includes('バックグラウンドではOSの制御により検知を一時停止'),'Background limitation must be disclosed');
           assert(html.includes('rel="manifest"')&&manifest.display==='standalone'&&manifest.scope==='./','PWA manifest install settings required');
-          assert(sw.includes('addEventListener("fetch"')&&sw.includes('url.origin !== self.location.origin'),'Service worker must only cache same-origin resources');
+          assert(sw.includes('addEventListener("fetch"')&&/url\.origin\s*!==\s*self\.location\.origin/.test(sw),'Service worker must only cache same-origin resources');
           assert(!/addEventListener\(["']push["']/.test(sw),'No external push provider implementation allowed');
           assert(css.includes('v4.5.1 — clean white interface')&&css.includes('.view{background:#fff'),'White interface overrides required');
           assert(gas.includes('const version = "4.5.1"')&&gas.includes('result.apiVersion = "4.5.1"'),'GAS version must be 4.5.1');
