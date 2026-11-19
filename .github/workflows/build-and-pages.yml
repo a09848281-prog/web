@@ -174,12 +174,12 @@ jobs:
               !manifest.includes('android:label="Remote Camera 4.2 Preview"')) {
             throw new Error('v3.8 preview app must be clearly distinguishable in Android launcher and paired-device list.');
           }
-          if (android.includes('rtc?.hasConnectedPeer() == true') ||
+          if (android.includes('Once WebRTC is healthy, stop polling GAS') ||
               !android.includes('locationRequestActive') ||
               !android.includes('now - cached.time <= 60000L') ||
               !android.includes('withTimeoutOrNull(8000L)') ||
               !android.includes('GAS一時エラー：待機を継続して再試行します')) {
-            throw new Error('v3.8 GAS polling pause, retry backoff or faster serialized location acquisition is missing.');
+            throw new Error('v4.2 must keep accepting new viewer offers while preserving retry backoff and serialized location acquisition.');
           }
           if (!apiClient.includes('retryableActions') ||
               !apiClient.includes('connectTimeout = 8000') ||
