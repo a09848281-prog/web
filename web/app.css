@@ -317,3 +317,6 @@ dialog::backdrop{background:rgba(255,255,255,.78)}
  .motionRegionActions{grid-template-columns:1fr}
  .motionRegionRow{flex-wrap:nowrap}
 }
+
+#imageViewerDialog[open]{background:#fff;color:#64748b}
+#imageViewerDialog::backdrop{background:rgba(255,255,255,.96)}
