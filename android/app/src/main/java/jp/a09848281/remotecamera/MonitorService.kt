@@ -431,10 +431,15 @@ class MonitorService : Service() {
                     val retryDelay = (1000L * (1L shl consecutiveFailures.coerceAtMost(4))).coerceAtMost(15000L)
                     delay(retryDelay)
                 } else {
-                    val waitSeconds = when (prefs.getString("waitMode", "standard")) {
-                        "eco" -> 30L
-                        "fast" -> 2L
-                        else -> 6L
+                    val waitSeconds = if (rtc?.hasPeers() == true) {
+                        // Keep signaling responsive while one or more viewers are connected.
+                        2L
+                    } else {
+                        when (prefs.getString("waitMode", "standard")) {
+                            "eco" -> 30L
+                            "fast" -> 2L
+                            else -> 6L
+                        }
                     }
                     delay(waitSeconds * 1000L)
                 }
