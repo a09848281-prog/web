@@ -479,9 +479,8 @@ function unpairDevice_(r) {
   try {
     sheet_("Controllers").getRange(controller.controllerRow, 7).setValue("revoked");
     remaining = activeControllerRows_(controller.deviceId).length;
-    if (remaining === 0) {
-      sheet_("Devices").getRange(controller.row, 11).clearContent();
-    }
+    // Keep the MULTI_VIEWER_V42 migration marker even when the last viewer is revoked.
+    // Clearing it would allow a legacy v4.1 token hash to be migrated back into an active viewer.
   } finally {
     lock.releaseLock();
   }
