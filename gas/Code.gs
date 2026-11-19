@@ -29,7 +29,7 @@ function doGet() {
 }
 
 function health_() {
-  const version = "4.2.2";
+  const version = "4.5.0";
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty("DB_SPREADSHEET_ID");
   if (!spreadsheetId) {
     return {
@@ -81,13 +81,13 @@ function doPost(e) {
     result = dispatch_(req);
     if (!result || typeof result !== "object") result = { ok: true, value: result };
     result.serverMs = Date.now() - startedAt;
-    result.apiVersion = "4.2.2";
+    result.apiVersion = "4.5.0";
   } catch (err) {
     result = {
       ok: false,
       error: safeError_(err),
       serverMs: Date.now() - startedAt,
-      apiVersion: "4.2.2"
+      apiVersion: "4.5.0"
     };
   }
   if (params.mode === "json") {
