@@ -3,12 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#101827">
-<title>Remote Camera v4.2.2</title>
+<meta name="theme-color" content="#ffffff">
+<title>Remote Camera v4.5 Preview</title>
 <link rel="stylesheet" href="./app.css">
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Remote Camera 4.5">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-<script defer src="./app.js?v=4.2.2"></script>
+<script defer src="./motion-regions.js?v=4.5.0"></script>
+<script defer src="./app.js?v=4.5.0"></script>
 </head>
 <body>
 <header class="top">
@@ -113,13 +118,20 @@
       <span id="sessionDuration">接続時間 00:00:00</span>
     </div>
     <p id="connectionMetrics" class="metrics">通信状態：未接続</p>
-    <div class="motionTools">
-      <label class="motionToggle"><input id="motionEnabled" type="checkbox"> 動体検知</label>
-      <label>感度<select id="motionSensitivity"><option value="low">低</option><option value="normal" selected>標準</option><option value="high">高</option></select></label>
-      <button id="motionNotifications" type="button">通知を許可</button>
-      <button id="motionEvents" type="button">検知履歴</button>
+    <section class="motionTools" aria-label="範囲指定式の動体検知">
+      <div class="motionToolsTitle"><strong>指定範囲の動体検知</strong><span id="motionRegionCount">検知範囲 0/8</span></div>
+      <label class="motionToggle"><input id="motionEnabled" type="checkbox"> 動体検知を有効にする</label>
+      <label>検知感度<select id="motionSensitivity"><option value="low">低</option><option value="normal" selected>標準</option><option value="high">高</option></select></label>
+      <div class="motionRegionActions">
+        <button id="drawMotionRegion" type="button">＋ 範囲を追加</button>
+        <button id="clearMotionRegions" type="button">範囲をすべて削除</button>
+      </div>
+      <div id="motionRegionList" class="motionRegionList" aria-live="polite"></div>
+      <button id="motionNotifications" type="button" class="wide">iPadの通知を許可</button>
+      <button id="motionEvents" type="button" class="wide">検知履歴</button>
       <span id="motionState" aria-live="polite">動体検知 OFF</span>
-    </div>
+      <p class="hint">右側の映像でドラッグした範囲だけを検知します。AIは使わず、iPad内で映像の画素変化を比較します。iPadでシステム通知を使うには、ホーム画面に追加したWebアプリから通知を許可してください。</p>
+    </section>
     <p id="gasTiming" class="gasTiming">GAS処理 --</p>
     <div class="sideMapTools">
       <label class="check"><input id="mapFollow" type="checkbox" checked> 最新位置を追尾</label>
@@ -139,6 +151,7 @@
     </div>
     <div id="videoPane" class="videoPane">
       <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
+      <div id="motionOverlay" class="motionOverlay hidden" aria-label="検知範囲の編集"></div>
       <div id="placeholder"><b>映像はまだありません</b><small>Androidで監視待機を開始してから接続してください。</small></div>
       <footer><span id="streamState">待機中</span><span id="videoState">映像待機中</span><span id="audioState">Androidマイク待機中</span><span id="iceState">ICE: --</span></footer>
     </div>

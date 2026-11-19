@@ -78,6 +78,11 @@ const S = {
   motionPrevious: null,
   motionLastTriggered: 0,
   motionEvents: [],
+  motionRegions: [],
+  motionDraft: null,
+  motionDrawActive: false,
+  motionLastTriggeredByRegion: {},
+  serviceWorkerRegistration: null,
   viewerHeartbeatTimer: null,
   imageViewerSource: "",
   imageViewerFilename: "",
@@ -571,6 +576,7 @@ function updateViewerTransform() {
   video.style.transform = "scale(" + S.zoom + ")";
   video.style.objectFit = S.fitMode;
   $("zoomValue").textContent = Math.round(S.zoom * 100) + "%";
+  positionMotionOverlay();
 }
 
 async function toggleFullscreen() {
@@ -1097,7 +1103,255 @@ function startVideoWatchdog(pc) {
   }, 2000);
 }
 
+
 const MOTION_STORAGE_KEY = "rc_motion_events_v42";
+const MOTION_REGIONS_KEY = "rc_motion_regions_v45";
+const MAX_MOTION_REGIONS = 8;
+
+function clampUnit(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
+}
+function normalizeMotionRegions(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, MAX_MOTION_REGIONS).map((region, index) => {
+    if (!region || typeof region !== "object") return null;
+    const x = clampUnit(region.x);
+    const y = clampUnit(region.y);
+    const width = Math.min(1 - x, clampUnit(region.w));
+    const height = Math.min(1 - y, clampUnit(region.h));
+    if (width < 0.02 || height < 0.02) return null;
+    return {
+      id: String(region.id || ("region-" + (index + 1))).slice(0, 80),
+      name: String(region.name || ("範囲 " + (index + 1))).slice(0, 24),
+      x, y, w: width, h: height,
+      enabled: region.enabled !== false
+    };
+  }).filter(Boolean);
+}
+function readMotionRegions() {
+  try {
+    return normalizeMotionRegions(JSON.parse(storageGet(MOTION_REGIONS_KEY, "[]")));
+  } catch (_) {
+    return [];
+  }
+}
+function saveMotionRegions() {
+  const ok = storageSet(MOTION_REGIONS_KEY, JSON.stringify(S.motionRegions));
+  if (!ok) toast("検知範囲をこのブラウザーに保存できませんでした。");
+  return ok;
+}
+function renderMotionRegionList() {
+  const host = $("motionRegionList");
+  host.replaceChildren();
+  $("motionRegionCount").textContent = "検知範囲 " + S.motionRegions.length + "/" + MAX_MOTION_REGIONS;
+  if (!S.motionRegions.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "まだ範囲がありません。「範囲を追加」を押して、右側の映像をドラッグしてください。";
+    host.appendChild(empty);
+    return;
+  }
+  S.motionRegions.forEach(region => {
+    const row = document.createElement("div");
+    row.className = "motionRegionRow";
+    const label = document.createElement("label");
+    label.className = "check";
+    const enabled = document.createElement("input");
+    enabled.type = "checkbox";
+    enabled.checked = region.enabled;
+    enabled.addEventListener("change", () => {
+      region.enabled = enabled.checked;
+      saveMotionRegions();
+      renderMotionRegionOverlay();
+      if (S.motionTimer) stopMotionDetection(true);
+      if ($("motionEnabled").checked && S.pc) startMotionDetection();
+    });
+    const name = document.createElement("span");
+    name.textContent = region.name;
+    label.append(enabled, name);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "motionRegionRemove";
+    remove.textContent = "削除";
+    remove.setAttribute("aria-label", region.name + "を削除");
+    remove.addEventListener("click", () => {
+      S.motionRegions = S.motionRegions.filter(item => item.id !== region.id);
+      saveMotionRegions();
+      renderMotionRegions();
+      if (S.motionTimer) stopMotionDetection(true);
+      if ($("motionEnabled").checked && S.pc) startMotionDetection();
+    });
+    row.append(label, remove);
+    host.appendChild(row);
+  });
+}
+function renderMotionRegionOverlay() {
+  const overlay = $("motionOverlay");
+  overlay.replaceChildren();
+  S.motionRegions.forEach(region => {
+    const box = document.createElement("div");
+    box.className = "motionRegionBox" + (region.enabled ? "" : " inactive");
+    box.style.left = (region.x * 100) + "%";
+    box.style.top = (region.y * 100) + "%";
+    box.style.width = (region.w * 100) + "%";
+    box.style.height = (region.h * 100) + "%";
+    const label = document.createElement("span");
+    label.textContent = region.name;
+    box.appendChild(label);
+    overlay.appendChild(box);
+  });
+  if (S.motionDraft) {
+    const draft = document.createElement("div");
+    draft.className = "motionRegionBox draft";
+    draft.style.left = (S.motionDraft.x * 100) + "%";
+    draft.style.top = (S.motionDraft.y * 100) + "%";
+    draft.style.width = (S.motionDraft.w * 100) + "%";
+    draft.style.height = (S.motionDraft.h * 100) + "%";
+    overlay.appendChild(draft);
+  }
+}
+function renderMotionRegions() {
+  renderMotionRegionList();
+  renderMotionRegionOverlay();
+}
+function positionMotionOverlay() {
+  const overlay = $("motionOverlay");
+  const video = $("remoteVideo");
+  const pane = $("videoPane");
+  if (!overlay || !video || !pane || !video.videoWidth || !video.videoHeight ||
+      pane.classList.contains("hidden") || pane.clientWidth < 1 || pane.clientHeight < 1) {
+    if (overlay) overlay.classList.add("hidden");
+    return;
+  }
+  const paneWidth = pane.clientWidth;
+  const paneHeight = pane.clientHeight;
+  const fit = S.fitMode === "cover" ? "cover" : "contain";
+  const scale = fit === "cover"
+    ? Math.max(paneWidth / video.videoWidth, paneHeight / video.videoHeight)
+    : Math.min(paneWidth / video.videoWidth, paneHeight / video.videoHeight);
+  const width = video.videoWidth * scale;
+  const height = video.videoHeight * scale;
+  overlay.style.left = ((paneWidth - width) / 2) + "px";
+  overlay.style.top = ((paneHeight - height) / 2) + "px";
+  overlay.style.width = width + "px";
+  overlay.style.height = height + "px";
+  overlay.style.transform = "scale(" + S.zoom + ")";
+  overlay.classList.remove("hidden");
+  renderMotionRegionOverlay();
+}
+function pointerToMotionPoint(event) {
+  const bounds = $("motionOverlay").getBoundingClientRect();
+  if (bounds.width < 1 || bounds.height < 1) return null;
+  return {
+    x: clampUnit((event.clientX - bounds.left) / bounds.width),
+    y: clampUnit((event.clientY - bounds.top) / bounds.height)
+  };
+}
+function cancelMotionRegionDrawing(showMessage = false) {
+  S.motionDrawActive = false;
+  S.motionDraft = null;
+  $("motionOverlay").classList.remove("drawing");
+  $("drawMotionRegion").textContent = "＋ 範囲を追加";
+  renderMotionRegionOverlay();
+  if (showMessage) toast("範囲の追加をキャンセルしました。");
+}
+function beginMotionRegionDrawing() {
+  const video = $("remoteVideo");
+  if (!S.pc || video.readyState < 2 || !video.videoWidth) {
+    toast("先にAndroidへ接続して映像を表示してください。");
+    return;
+  }
+  if (S.motionRegions.length >= MAX_MOTION_REGIONS) {
+    toast("検知範囲は最大 " + MAX_MOTION_REGIONS + " 個です。不要な範囲を削除してください。");
+    return;
+  }
+  S.motionDrawActive = true;
+  S.motionDraft = null;
+  $("motionOverlay").classList.add("drawing");
+  $("drawMotionRegion").textContent = "追加をキャンセル";
+  $("motionState").textContent = "右側の映像をドラッグして範囲を指定";
+  toast("右側の映像上で、検知したい範囲をドラッグしてください。");
+}
+function finishMotionRegionDrawing() {
+  const draft = S.motionDraft;
+  S.motionDraft = null;
+  cancelMotionRegionDrawing(false);
+  if (!draft || draft.w < 0.02 || draft.h < 0.02) {
+    renderMotionRegionOverlay();
+    toast("範囲が小さすぎます。もう少し大きくドラッグしてください。");
+    return;
+  }
+  const number = S.motionRegions.length + 1;
+  S.motionRegions.push({
+    id: rid(),
+    name: "範囲 " + number,
+    x: draft.x,
+    y: draft.y,
+    w: draft.w,
+    h: draft.h,
+    enabled: true
+  });
+  saveMotionRegions();
+  renderMotionRegions();
+  if (S.motionTimer) stopMotionDetection(true);
+  if ($("motionEnabled").checked && S.pc) startMotionDetection();
+  $("motionState").textContent = "範囲を " + S.motionRegions.length + " 個設定しました";
+  toast("検知範囲を追加しました。");
+}
+function setupMotionRegionDrawing() {
+  const overlay = $("motionOverlay");
+  overlay.addEventListener("pointerdown", event => {
+    if (!S.motionDrawActive) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const point = pointerToMotionPoint(event);
+    if (!point) return;
+    event.preventDefault();
+    S.motionDraft = { x: point.x, y: point.y, w: 0, h: 0 };
+    try { overlay.setPointerCapture(event.pointerId); } catch (_) {}
+    renderMotionRegionOverlay();
+  });
+  overlay.addEventListener("pointermove", event => {
+    if (!S.motionDrawActive || !S.motionDraft) return;
+    const point = pointerToMotionPoint(event);
+    if (!point) return;
+    const startX = S.motionDraft.startX === undefined ? S.motionDraft.x : S.motionDraft.startX;
+    const startY = S.motionDraft.startY === undefined ? S.motionDraft.y : S.motionDraft.startY;
+    S.motionDraft.startX = startX;
+    S.motionDraft.startY = startY;
+    S.motionDraft.x = Math.min(startX, point.x);
+    S.motionDraft.y = Math.min(startY, point.y);
+    S.motionDraft.w = Math.abs(point.x - startX);
+    S.motionDraft.h = Math.abs(point.y - startY);
+    renderMotionRegionOverlay();
+  });
+  overlay.addEventListener("pointerup", event => {
+    if (!S.motionDrawActive || !S.motionDraft) return;
+    const point = pointerToMotionPoint(event);
+    if (point) {
+      const startX = S.motionDraft.startX === undefined ? S.motionDraft.x : S.motionDraft.startX;
+      const startY = S.motionDraft.startY === undefined ? S.motionDraft.y : S.motionDraft.startY;
+      S.motionDraft.x = Math.min(startX, point.x);
+      S.motionDraft.y = Math.min(startY, point.y);
+      S.motionDraft.w = Math.abs(point.x - startX);
+      S.motionDraft.h = Math.abs(point.y - startY);
+    }
+    finishMotionRegionDrawing();
+  });
+  overlay.addEventListener("pointercancel", () => {
+    if (S.motionDrawActive) cancelMotionRegionDrawing(true);
+  });
+}
+function clearMotionRegions() {
+  if (!S.motionRegions.length) return toast("削除する検知範囲はありません。");
+  if (!confirm("設定した検知範囲をすべて削除しますか？")) return;
+  S.motionRegions = [];
+  saveMotionRegions();
+  cancelMotionRegionDrawing(false);
+  renderMotionRegions();
+  stopMotionDetection(true);
+  if ($("motionEnabled").checked) $("motionState").textContent = "検知範囲を設定してください";
+}
 function readMotionEvents() {
   try {
     const value = JSON.parse(storageGet(MOTION_STORAGE_KEY, "[]"));
@@ -1108,7 +1362,7 @@ function readMotionEvents() {
       Number.isFinite(Number(event.ratio))
     ).slice(0, 12).map(event => ({
       ...event,
-      // Keep the event metadata even when an old or oversized image is invalid.
+      regionName: String(event.regionName || "全画面").slice(0, 24),
       image: typeof event.image === "string" &&
         event.image.startsWith("data:image/jpeg;base64,") &&
         event.image.length <= 180000 ? event.image : ""
@@ -1125,11 +1379,23 @@ function stopMotionDetection(keepEnabled = true) {
   S.motionTimer = null;
   S.motionPrevious = null;
   $("motionState").textContent = keepEnabled && $("motionEnabled").checked
-    ? "接続待ち・映像受信時に再開" : "動体検知 OFF";
+    ? (S.motionRegions.some(region => region.enabled)
+      ? "接続待ち・映像受信時に再開" : "検知範囲を設定してください")
+    : "動体検知 OFF";
 }
 function startMotionDetection() {
   if (S.motionTimer || !S.pc) return;
-  $("motionState").textContent = "映像を解析中…";
+  const activeRegions = S.motionRegions.filter(region => region.enabled);
+  if (!activeRegions.length) {
+    $("motionState").textContent = "検知範囲を設定してください";
+    return;
+  }
+  if (!window.RemoteCameraMotion ||
+      typeof window.RemoteCameraMotion.measureRegions !== "function") {
+    $("motionState").textContent = "動体検知モジュールを読み込めません";
+    return;
+  }
+  $("motionState").textContent = "指定範囲を監視中…";
   const canvas = document.createElement("canvas");
   canvas.width = 160;
   canvas.height = 90;
@@ -1140,7 +1406,8 @@ function startMotionDetection() {
   }
   S.motionTimer = setInterval(() => {
     const video = $("remoteVideo");
-    if (!S.pc || document.hidden || video.readyState < 2 || !video.videoWidth) return;
+    if (!S.pc || document.hidden || $("videoPane").classList.contains("hidden") ||
+        video.readyState < 2 || !video.videoWidth) return;
     try {
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -1148,20 +1415,30 @@ function startMotionDetection() {
         S.motionPrevious = new Uint8ClampedArray(pixels);
         return;
       }
-      let changed = 0;
-      const count = pixels.length / 4;
-      for (let i = 0; i < pixels.length; i += 4) {
-        const diff = Math.abs(pixels[i] - S.motionPrevious[i]) +
-          Math.abs(pixels[i + 1] - S.motionPrevious[i + 1]) +
-          Math.abs(pixels[i + 2] - S.motionPrevious[i + 2]);
-        if (diff > 54) changed++;
-      }
+      const regions = S.motionRegions.filter(region => region.enabled);
+      const results = window.RemoteCameraMotion.measureRegions(
+        S.motionPrevious, pixels, canvas.width, canvas.height, regions, 54
+      );
       S.motionPrevious = new Uint8ClampedArray(pixels);
-      const ratio = changed / count;
       const threshold = ({ low: 0.16, normal: 0.09, high: 0.045 })[$("motionSensitivity").value] || 0.09;
-      $("motionState").textContent = "解析中 · 変化 " + (ratio * 100).toFixed(1) + "%";
-      if (ratio >= threshold && Date.now() - S.motionLastTriggered >= 10000) {
-        recordMotionEvent(ratio);
+      const changed = results.slice().sort((a, b) => b.ratio - a.ratio)[0];
+      if (!changed) {
+        $("motionState").textContent = "指定範囲を監視中…";
+        return;
+      }
+      $("motionState").textContent = changed.zoneName + " · 変化 " +
+        (changed.ratio * 100).toFixed(1) + "%";
+      const now = Date.now();
+      // Record at most one zone per sample to avoid notification bursts.
+      // Pick the strongest zone that has crossed its own cooldown.
+      const triggered = results
+        .filter(result => result.ratio >= threshold &&
+          now - (Number(S.motionLastTriggeredByRegion[result.zoneId]) || 0) >= 10000)
+        .sort((a, b) => b.ratio - a.ratio)[0];
+      if (triggered) {
+        S.motionLastTriggeredByRegion[triggered.zoneId] = now;
+        S.motionLastTriggered = now;
+        recordMotionEvent(triggered.ratio, triggered);
       }
     } catch (error) {
       $("motionState").textContent = "解析エラー";
@@ -1169,12 +1446,13 @@ function startMotionDetection() {
     }
   }, 700);
 }
-function recordMotionEvent(ratio) {
-  S.motionLastTriggered = Date.now();
+function recordMotionEvent(ratio, region) {
   const event = {
     timestamp: new Date().toISOString(),
     ratio: ratio,
     sensitivity: $("motionSensitivity").value,
+    regionId: String(region.zoneId || ""),
+    regionName: String(region.zoneName || "指定範囲"),
     image: ""
   };
   try {
@@ -1194,18 +1472,72 @@ function recordMotionEvent(ratio) {
   S.motionEvents.unshift(event);
   S.motionEvents = S.motionEvents.slice(0, 12);
   saveMotionEvents();
-  $("motionState").textContent = "⚠ 動きを検知 " + new Date(event.timestamp).toLocaleTimeString();
-  if ("Notification" in window && Notification.permission === "granted") {
-    try { new Notification("Remote Camera：動体を検知", { body: new Date(event.timestamp).toLocaleString() }); } catch (_) {}
+  $("motionState").textContent = "⚠ " + event.regionName + "で動きを検知";
+  renderMotionEventsIfOpen();
+  toast("⚠ " + event.regionName + "で動きを検知しました。");
+  notifyMotionEvent(event).catch(error => console.debug("Motion notification skipped", error));
+}
+function renderMotionEventsIfOpen() {
+  if ($("motionDialog").open) renderMotionEvents();
+}
+async function notifyMotionEvent(event) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const title = "Remote Camera：動体を検知";
+  const body = event.regionName + "で動きを検知しました（" +
+    new Date(event.timestamp).toLocaleTimeString() + "）。";
+  const options = {
+    body: body,
+    tag: "remote-camera-motion-" + (event.regionId || "area"),
+    timestamp: Date.parse(event.timestamp),
+    renotify: false,
+    data: { regionId: event.regionId || "" }
+  };
+  try {
+    let registration = S.serviceWorkerRegistration;
+    if (!registration && "serviceWorker" in navigator) {
+      registration = await navigator.serviceWorker.ready;
+    }
+    if (registration && typeof registration.showNotification === "function") {
+      await registration.showNotification(title, options);
+    } else {
+      new Notification(title, options);
+    }
+  } catch (error) {
+    console.debug("System notification unavailable", error);
   }
-  toast("動体を検知しました。イベント履歴に保存しました。");
+}
+async function registerMotionServiceWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  try {
+    S.serviceWorkerRegistration = await navigator.serviceWorker.register("./sw.js");
+    return S.serviceWorkerRegistration;
+  } catch (error) {
+    console.debug("Service worker registration skipped", error);
+    return null;
+  }
 }
 async function requestMotionNotifications() {
-  if (!("Notification" in window)) return toast("このブラウザーは通知に対応していません。");
+  if (!("Notification" in window)) {
+    return toast("このブラウザーではシステム通知を利用できません。検知履歴と画面内通知は利用できます。");
+  }
   try {
     const permission = await Notification.requestPermission();
-    toast(permission === "granted" ? "動体検知の通知を許可しました。" : "通知は許可されませんでした。");
-  } catch (_) { toast("通知許可を取得できませんでした。"); }
+    if (permission !== "granted") {
+      return toast("通知は許可されませんでした。ブラウザーまたはiPadの設定を確認してください。");
+    }
+    await registerMotionServiceWorker();
+    if (S.serviceWorkerRegistration &&
+        typeof S.serviceWorkerRegistration.showNotification === "function") {
+      await S.serviceWorkerRegistration.showNotification("Remote Camera", {
+        body: "動体検知通知のテストです。",
+        tag: "remote-camera-notification-test",
+        renotify: false
+      });
+    }
+    toast("通知を許可しました。");
+  } catch (error) {
+    toast("通知の設定に失敗しました：" + error.message);
+  }
 }
 function renderMotionEvents() {
   const host = $("motionRows");
@@ -1221,7 +1553,8 @@ function renderMotionEvents() {
     row.className = "motionrow";
     const detail = document.createElement("span");
     detail.textContent = new Date(event.timestamp).toLocaleString() +
-      " · 画面変化 " + (Number(event.ratio) * 100).toFixed(1) + "%";
+      " · " + (event.regionName || "全画面") +
+      " · 変化 " + (Number(event.ratio) * 100).toFixed(1) + "%";
     row.appendChild(detail);
     if (event.image) {
       const filename = "remote-camera-motion-" + event.timestamp.replace(/[^0-9T-]/g, "-") + ".jpg";
@@ -1254,9 +1587,10 @@ function showMotionEvents() {
   $("motionDialog").showModal();
 }
 function exportMotionEvents() {
-  const rows = [["timestamp","change_ratio","sensitivity"]];
+  const rows = [["timestamp","region","change_ratio","sensitivity"]];
   S.motionEvents.forEach(event => rows.push([
-    event.timestamp, Number(event.ratio).toFixed(4), event.sensitivity
+    event.timestamp, event.regionName || "全画面",
+    Number(event.ratio).toFixed(4), event.sensitivity
   ]));
   const csv = "\uFEFF" + rows.map(row => row.map(value =>
     '"' + String(value).replace(/"/g, '""') + '"'
@@ -1264,7 +1598,7 @@ function exportMotionEvents() {
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = "remote-camera-motion-events.csv";
+  link.download = "remote-camera-motion-events-v4.5.csv";
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -1874,6 +2208,7 @@ function showMap() {
   $("mapTab").classList.add("active");
   $("videoTab").classList.remove("active");
   initMap();
+  cancelMotionRegionDrawing(false);
   setTimeout(() => { if (S.map) S.map.invalidateSize(); }, 100);
 }
 function showVideo() {
@@ -1881,6 +2216,7 @@ function showVideo() {
   $("videoPane").classList.remove("hidden");
   $("videoTab").classList.add("active");
   $("mapTab").classList.remove("active");
+  setTimeout(positionMotionOverlay, 80);
 }
 function drawMap(points) {
   initMap();
@@ -1945,12 +2281,19 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-document.addEventListener("fullscreenchange", () => window.setTimeout(restoreRemotePlayback, 180));
-document.addEventListener("webkitfullscreenchange", () => window.setTimeout(restoreRemotePlayback, 180));
+document.addEventListener("fullscreenchange", () => {
+  window.setTimeout(restoreRemotePlayback, 180);
+  window.setTimeout(positionMotionOverlay, 220);
+});
+document.addEventListener("webkitfullscreenchange", () => {
+  window.setTimeout(restoreRemotePlayback, 180);
+  window.setTimeout(positionMotionOverlay, 220);
+});
 $("remoteVideo").addEventListener("webkitendfullscreen", () => window.setTimeout(restoreRemotePlayback, 350));
 window.addEventListener("pageshow", () => window.setTimeout(restoreRemotePlayback, 180));
 window.addEventListener("resize", () => {
   if (S.pc && S.remoteVideoStream) window.setTimeout(restoreRemotePlayback, 150);
+  window.setTimeout(positionMotionOverlay, 180);
 });
 document.addEventListener("DOMContentLoaded", async () => {
   $("refresh").addEventListener("click", refreshDeviceList);
@@ -1998,18 +2341,33 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("history").addEventListener("click", () => loadHistory().catch(error => toast(error.message)));
   $("deleteHistory").addEventListener("click", () => deleteHistory().catch(error => toast(error.message)));
   S.motionEvents = readMotionEvents();
+  S.motionRegions = readMotionRegions();
+  renderMotionRegions();
+  setupMotionRegionDrawing();
   $("motionEnabled").checked = storageGet("rc_motion_enabled_v42", "0") === "1";
   $("motionEnabled").addEventListener("change", event => {
     const enabled = event.target.checked;
     storageSet("rc_motion_enabled_v42", enabled ? "1" : "0");
     if (enabled) {
       if (S.pc) startMotionDetection();
-      else $("motionState").textContent = "接続後に解析を開始します";
+      else $("motionState").textContent = "接続後に指定範囲の監視を開始します";
     } else {
       stopMotionDetection(false);
     }
   });
+  $("drawMotionRegion").addEventListener("click", () => {
+    if (S.motionDrawActive) cancelMotionRegionDrawing(true);
+    else beginMotionRegionDrawing();
+  });
+  $("clearMotionRegions").addEventListener("click", clearMotionRegions);
   $("motionNotifications").addEventListener("click", requestMotionNotifications);
+  registerMotionServiceWorker();
+  $("remoteVideo").addEventListener("loadedmetadata", positionMotionOverlay);
+  $("remoteVideo").addEventListener("resize", positionMotionOverlay);
+  if (typeof ResizeObserver === "function") {
+    const motionResizeObserver = new ResizeObserver(() => positionMotionOverlay());
+    motionResizeObserver.observe($("videoPane"));
+  }
   $("motionEvents").addEventListener("click", showMotionEvents);
   $("exportMotionEvents").addEventListener("click", exportMotionEvents);
   $("imageViewerDownload").addEventListener("click", saveImageViewer);
@@ -2041,6 +2399,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     S.fitMode = S.fitMode === "contain" ? "cover" : "contain";
     $("fitMode").textContent = S.fitMode === "contain" ? "全体表示" : "画面に合わせる";
     updateViewerTransform();
+    positionMotionOverlay();
   });
   $("mapFollow").addEventListener("change", event => {
     S.followMap = event.target.checked;
