@@ -277,7 +277,7 @@ function refreshDeviceList() {
 async function claimDevice() {
   const code = $("pairCode").value.trim();
   const controllerName = $("pairName").value.trim() || "Web閲覧端末";
-  if (!/^\\d{8}$/.test(code)) {
+  if (!/^\d{8}$/.test(code)) {
     message("pairMessage", "8桁の登録コードを入力してください。");
     return;
   }
