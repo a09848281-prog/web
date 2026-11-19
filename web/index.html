@@ -170,11 +170,26 @@
   <form method="dialog" class="dialog">
     <button class="close" aria-label="閉じる">×</button>
     <h2>動体検知イベント</h2>
-    <p>検知した時刻・画面変化率・保存された静止画を表示します。履歴と画像はこのブラウザー内に保存されます。</p>
+    <p>検知した時刻・画面変化率・保存された静止画を表示します。画像を押すと画面いっぱいに表示できます。履歴と画像はこのブラウザー内に保存されます。</p>
     <div id="motionRows"></div>
     <button id="exportMotionEvents" type="button" class="wide">CSVを書き出す</button>
     <button class="wide">閉じる</button>
   </form>
+</dialog>
+<dialog id="imageViewerDialog" class="imageViewerDialog" aria-label="受信画像ビューアー">
+  <section class="imageViewer">
+    <header class="imageViewerHeader">
+      <strong id="imageViewerTitle">受信画像</strong>
+      <div>
+        <button id="imageViewerDownload" type="button" disabled>保存</button>
+        <button id="imageViewerFullscreen" type="button">全画面</button>
+        <button id="imageViewerClose" type="button" aria-label="画像を閉じる">閉じる</button>
+      </div>
+    </header>
+    <div class="imageViewerStage">
+      <img id="imageViewerImage" alt="受信画像" draggable="false">
+    </div>
+  </section>
 </dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 </body>
