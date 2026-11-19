@@ -6,6 +6,7 @@ on:
       - "web/**"
       - "gas/**"
       - "android/**"
+      - "docs/**"
       - ".github/workflows/validate-v451.yml"
   pull_request:
     branches: [rebuild-v4.2.2-ultra-stable-controls]
