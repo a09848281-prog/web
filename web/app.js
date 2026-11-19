@@ -1425,7 +1425,9 @@ function findPersonCandidates(mask, bounds) {
       }
     }
     const width = maxX - minX + 1, height = maxY - minY + 1;
-    const aspect = height / Math.max(1, width), fill = area / Math.max(1, width * height);
+    // Correct the temporary 160x90 analysis resize so upright-body ratios also work on portrait video.
+    const aspect = (height / Math.max(1, width)) * sourceAspect * (MOTION_WIDTH / MOTION_HEIGHT);
+    const fill = area / Math.max(1, width * height);
     if (area >= 12 && height >= 10 && width >= 3 && aspect >= 1.15 && aspect <= 5.8 &&
         fill >= 0.035 && width * height < MOTION_WIDTH * MOTION_HEIGHT * 0.32) {
       found.push({ x:(minX+maxX)/2/MOTION_WIDTH, y:(minY+maxY)/2/MOTION_HEIGHT,width,height,area });
@@ -1532,7 +1534,8 @@ function startMotionDetection() {
           const ratio=changed/area;
           const sensitivity=zone.sensitivity||$("motionSensitivity").value;
           const threshold=({low:0.16,normal:0.09,high:0.045})[sensitivity]||0.09;
-          const candidates=$("personCandidateEnabled").checked?findPersonCandidates(mask,bounds):[];
+          const candidates=$("personCandidateEnabled").checked
+            ?findPersonCandidates(mask,bounds,video.videoHeight/Math.max(1,video.videoWidth)):[];
           totalPersonCandidates+=candidates.length;
           const state=S.personZoneStates[zone.id]||{
             present:false,lastSeenAt:0,emptySince:0,lastMotionEventAt:0,centroid:null
