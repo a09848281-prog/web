@@ -79,23 +79,20 @@
       </div>
     </details>
 
-    <a class="download" href="https://github.com/a09848281-prog/web/actions" target="_blank" rel="noopener">Android APKのビルド・ダウンロード</a>
-  </aside>
-  <section class="view">
-    <div class="viewhead">
-      <div><small>LIVE VIEW</small><h2 id="deviceName">Android端末をペアリングしてください</h2><p id="deviceMeta">待機中</p></div>
-      <div class="viewHeaderActions">
-        <button id="pairQuick" type="button" class="pairQuick" disabled>＋ Androidを追加</button>
-        <div class="monitorButtons">
-          <button id="connect" type="button" class="primary" disabled>▶ 接続する</button>
-          <button id="disconnect" type="button" disabled>■ 切断</button>
-        </div>
-        <div class="viewTabs">
-          <button id="videoTab" type="button" class="active">映像</button>
-          <button id="mapTab" type="button">地図</button>
-        </div>
+    <section class="controlCard" aria-label="監視操作">
+      <small class="controlEyebrow">REMOTE CONTROL</small>
+      <h2 id="deviceName">Android端末をペアリングしてください</h2>
+      <p id="deviceMeta">待機中</p>
+      <div class="monitorButtons">
+        <button id="connect" type="button" class="primary" disabled>▶ 接続する</button>
+        <button id="disconnect" type="button" disabled>■ 切断</button>
       </div>
-    </div>
+      <div class="viewTabs">
+        <button id="videoTab" type="button" class="active">映像</button>
+        <button id="mapTab" type="button">地図</button>
+      </div>
+      <button id="pairQuick" type="button" class="pairQuick wide" disabled>＋ Androidを追加</button>
+    </section>
     <div class="viewerControls">
       <button id="ptt" type="button" class="ptt pttProminent" disabled>🎙 押している間だけ話す</button>
       <button id="pttLock" type="button" disabled>送話ロック OFF</button><span class="audioControlHint">送話ロックで長押し不要・送話は3分で自動停止</span>
@@ -122,20 +119,26 @@
       <span id="motionState" aria-live="polite">動体検知 OFF</span>
     </div>
     <p id="gasTiming" class="gasTiming">GAS処理 --</p>
+    <div class="sideMapTools">
+      <label class="check"><input id="mapFollow" type="checkbox" checked> 最新位置を追尾</label>
+      <button id="copyLocation" type="button">座標をコピー</button>
+    </div>
+    <a class="download" href="https://github.com/a09848281-prog/web/actions" target="_blank" rel="noopener">Android APKのビルド・ダウンロード</a>
+  </aside>
+  <section class="view" aria-label="受信画面">
+    <div class="viewScreenHeader">
+      <span id="streamStateHeader">LIVE MONITOR</span>
+      <span id="screenConnectionState">映像待機中</span>
+    </div>
     <div id="videoPane" class="videoPane">
       <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
       <div id="placeholder"><b>映像はまだありません</b><small>Androidで監視待機を開始してから接続してください。</small></div>
       <footer><span id="streamState">待機中</span><span id="videoState">映像待機中</span><span id="audioState">Androidマイク待機中</span><span id="iceState">ICE: --</span></footer>
     </div>
     <div id="mapPane" class="hidden">
-      <div class="mapTools">
-        <label class="check"><input id="mapFollow" type="checkbox" checked> 最新位置を追尾</label>
-        <button id="copyLocation" type="button">座標をコピー</button>
-      </div>
       <div id="map"></div>
       <p id="locationInfo">位置情報はありません。</p>
     </div>
-    <p class="footer">常時録画・録音は行いません。動体検知はこのブラウザー内で映像を解析し、検知時の小さな静止画と履歴をローカル保存します。タブがバックグラウンドで停止・休止すると検知も止まります。</p>
   </section>
 </main>
 <dialog id="pairDialog">
