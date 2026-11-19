@@ -629,7 +629,6 @@ videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
     }
 
     @Synchronized
-    @Synchronized
     fun setFlashlight(enabled: Boolean) {
         val id = currentCameraId ?: throw IllegalStateException("カメラIDを取得できません。")
         if (frontCamera && enabled) throw IllegalStateException("ライトは背面カメラで使用してください。")
