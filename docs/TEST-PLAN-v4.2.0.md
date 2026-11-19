@@ -38,7 +38,7 @@
 
 ## CI確認記録（2026年11月19日）
 
-- 最新ソース検査・APKビルド：成功（[Actions run](https://github.com/a09848281-prog/web/actions/runs/44490462920)）
+- 最終ソース検査・APKビルド：成功（[Actions run](https://github.com/a09848281-prog/web/actions/runs/44490794076)）
 - 最新v4.2 Pagesデプロイ：成功（[Actions run](https://github.com/a09848281-prog/web/actions/runs/44490446343)）
 - 構文、HTML ID/API互換、v4.2整合、APK必須権限を自動検査済み。
 
