@@ -4,12 +4,12 @@
 
 ## 最新GitHub Actions結果
 
-- 最新Pull Requestソース検査・APKビルド：**成功**
-  - Run #203: https://github.com/a09848281-prog/web/actions/runs/44490462920
+- 最終Pull Requestソース検査・APKビルド：**成功**
+  - Run: https://github.com/a09848281-prog/web/actions/runs/44490794076
   - 対象ブランチ：`rebuild-v4.2-multi-viewer-camera`
-  - Commit：`32fdb8c45cd0d4add44b3b7fd08656f2fd5df66f`
-- 最新Pushソース検査・APKビルド：**成功**
-  - Run #201: https://github.com/a09848281-prog/web/actions/runs/44490446412
+  - Commit：`0cc5ae40b8c5c0a7a9eadc9881229d7b9c970423`
+- Pushソース検査・APKビルド：**成功**
+  - Run: https://github.com/a09848281-prog/web/actions/runs/44490446412
 - GitHub Pages v4.2 Preview：**成功**
   - Run #9: https://github.com/a09848281-prog/web/actions/runs/44490446343
   - Pages deployment commit：`9974b7472640aeab403686a2cff57d1ffcbeb263`
@@ -18,11 +18,11 @@
 ## Android APK
 
 - Artifact名：`remote-camera-debug-apk-v4.2`
-- Artifact ID：`14512642114`
+- Artifact ID：`14512228729`
 - サイズ：26,096,198 bytes
-- Artifact ZIP SHA-256：`0b9560c6cf264d618af24663b24449ce1a7243766a97c51dd64109a9a49943fd`
-- 取得先： https://github.com/a09848281-prog/web/actions/runs/44490462920
-- 有効期限：2026年12月19日 08:47 UTC
+- Artifact ZIP SHA-256：`ad4335c1a2f8182cbe2a33aae27023d8583103862853551b6adb10dc51a5b425`
+- 取得先： https://github.com/a09848281-prog/web/actions/runs/44490794076
+- 有効期限：2026年12月19日 08:49 UTC
 
 GitHub ActionsのArtifact欄からZIPをダウンロードし、展開した `app-debug.apk` をAndroidへインストールします。
 
