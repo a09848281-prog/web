@@ -29,7 +29,7 @@ function doGet() {
 }
 
 function health_() {
-  const version = "4.2.0";
+  const version = "4.2.2";
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty("DB_SPREADSHEET_ID");
   if (!spreadsheetId) {
     return {
@@ -81,13 +81,13 @@ function doPost(e) {
     result = dispatch_(req);
     if (!result || typeof result !== "object") result = { ok: true, value: result };
     result.serverMs = Date.now() - startedAt;
-    result.apiVersion = "4.2.0";
+    result.apiVersion = "4.2.2";
   } catch (err) {
     result = {
       ok: false,
       error: safeError_(err),
       serverMs: Date.now() - startedAt,
-      apiVersion: "4.2.0"
+      apiVersion: "4.2.2"
     };
   }
   if (params.mode === "json") {
@@ -684,7 +684,7 @@ function saveSettings_(r) {
     quality: ["auto", "360", "480", "720", "1080"].includes(String(s.quality)) ? String(s.quality) : "720",
     dataMode: ["auto", "ultra", "save", "standard", "high"].includes(String(s.dataMode)) ? String(s.dataMode) : "standard",
     captureRatio: ["16:9", "4:3", "1:1", "9:16"].includes(String(s.captureRatio)) ? String(s.captureRatio) : "16:9",
-    fpsLimit: clamp_(s.fpsLimit, 15, 30, 24),
+    fpsLimit: clamp_(s.fpsLimit, 15, 60, 24),
     connectedLocationEnabled: s.connectedLocationEnabled === true,
     idleLocationEnabled: s.idleLocationEnabled === true,
     connectedInterval: clamp_(s.connectedInterval, 10, 3600, 30),

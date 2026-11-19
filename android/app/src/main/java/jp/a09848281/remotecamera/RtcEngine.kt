@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
@@ -33,6 +34,7 @@ class RtcEngine(
     private val audioPickupMode: String,
     private val scope: CoroutineScope,
     private val onState: (String) -> Unit,
+    private val monitorMetricsProvider: () -> JSONObject = { JSONObject() },
     private val onControlCommand: (String, JSONObject) -> Unit = { _, _ -> }
 ) {
     private val peers = ConcurrentHashMap<String, PeerConnection>()
@@ -102,7 +104,7 @@ class RtcEngine(
                 else -> 1280 to 720
             }
         }
-        val baseFps = fpsLimit.coerceIn(15, 30)
+        val baseFps = fpsLimit.coerceIn(15, 60)
         val baseBitrate = when (tier) {
             360 -> 650000
             480 -> 1000000
@@ -330,7 +332,7 @@ class RtcEngine(
         var lastCaptureError: Exception? = null
         var captureStarted = false
         captureLoop@ for ((width, height) in captureSizes) {
-            for (fps in listOf(30, 24, 20, 15)) {
+            for (fps in listOf(profile.fps, minOf(profile.fps, 30), 24, 20, 15).distinct()) {
                 val candidate = enumerator.createCapturer(selected, createCameraEventsHandler())
                     ?: throw IllegalStateException("カメラを開けません。")
                 try {
@@ -631,18 +633,41 @@ videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
         val id = currentCameraId ?: throw IllegalStateException("カメラIDを取得できません。")
         if (frontCamera && enabled) throw IllegalStateException("ライトは背面カメラで使用してください。")
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        val available = manager.getCameraCharacteristics(id)
-            .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-        if (!available && enabled) throw IllegalStateException("このカメラにはライトがありません。")
-        try {
-            manager.setTorchMode(id, enabled)
-            flashlightEnabled = enabled
-            onState(if (enabled) "スマホのライトをONにしました" else "スマホのライトをOFFにしました")
+        val available = try {
+            manager.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
         } catch (e: Exception) {
-            flashlightEnabled = false
-            throw IllegalStateException("ライトを切り替えできません。カメラが使用中、または端末が非対応の可能性があります: ${e.message}")
+            throw IllegalStateException("ライト対応を確認できません: ${e.message}")
         }
+        if (!available && enabled) throw IllegalStateException("このカメラにはライトがありません。")
+        var lastError: Exception? = null
+        for (attempt in 0 until 4) {
+            try {
+                manager.setTorchMode(id, enabled)
+                flashlightEnabled = enabled
+                onState(if (enabled) "スマホのライトをONにしました" else "スマホのライトをOFFにしました")
+                return
+            } catch (e: CameraAccessException) {
+                lastError = e
+                val retryable = e.reason == CameraAccessException.CAMERA_IN_USE ||
+                    e.reason == CameraAccessException.MAX_CAMERAS_IN_USE
+                if (!retryable || attempt == 3) break
+                try {
+                    Thread.sleep(120L * (attempt + 1))
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IllegalStateException("ライト操作が中断されました。")
+                }
+            } catch (e: Exception) {
+                lastError = e
+                break
+            }
+        }
+        // Retain the last confirmed value. Do not optimistically flip the Web UI on failure.
+        throw IllegalStateException("ライトを切り替えできませんでした。カメラの使用状況を確認して再試行してください: ${lastError?.message}")
     }
+
+    @Synchronized
+    fun isFlashlightOn(): Boolean = flashlightEnabled
 
     fun sendControlMessage(message: JSONObject, sessionId: String? = null) {
         val bytes = message.toString().toByteArray(Charsets.UTF_8)
@@ -668,9 +693,14 @@ videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
             id != null && (context.getSystemService(Context.CAMERA_SERVICE) as CameraManager)
                 .getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
         } catch (_: Exception) { false }
+        val monitor = try { monitorMetricsProvider() } catch (_: Exception) { JSONObject() }
         sendControlMessage(JSONObject()
             .put("type", "device_status")
             .put("requestId", requestId)
+            .put("monitorStartedAt", monitor.optLong("monitorStartedAt", 0L))
+            .put("monitorElapsedMs", monitor.optLong("monitorElapsedMs", 0L))
+            .put("monitorRxBytes", monitor.optLong("monitorRxBytes", -1L))
+            .put("monitorTxBytes", monitor.optLong("monitorTxBytes", -1L))
             .put("batteryPercent", battery)
             .put("charging", plugged != 0 || status == BatteryManager.BATTERY_STATUS_CHARGING ||
                 status == BatteryManager.BATTERY_STATUS_FULL)
@@ -691,7 +721,7 @@ videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
         val normalizedQuality = if (quality in listOf("auto", "360", "480", "720", "1080")) quality else "720"
         val normalizedMode = if (dataMode in listOf("auto", "ultra", "save", "standard", "high")) dataMode else "standard"
         val normalizedRatio = if (ratio in listOf("16:9", "4:3", "1:1", "9:16")) ratio else "16:9"
-        val normalizedFps = fpsLimit.coerceIn(15, 30)
+        val normalizedFps = fpsLimit.coerceIn(15, 60)
         val changed = normalizedQuality != currentQuality || normalizedMode != currentDataMode ||
             normalizedRatio != currentCaptureRatio || normalizedFps != currentFpsLimit
         if (!changed) return
@@ -703,25 +733,31 @@ videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
         val profile = profileFor(currentQuality, currentDataMode, currentCaptureRatio, currentFpsLimit)
         val camera = capturer
         val formatChanged = camera != null &&
-            (profile.width != captureWidth || profile.height != captureHeight)
+            (profile.width != captureWidth || profile.height != captureHeight || profile.fps != captureFps)
 
-        // Live FPS/bitrate updates do not restart Camera2. Resolution/aspect changes
-        // remain deferred until the next session to avoid a visible video freeze.
-        if (formatChanged && peers.isEmpty()) {
+        // Keep the existing PeerConnections alive while changing the camera capture format.
+        if (formatChanged) {
             try {
-                camera!!.changeCaptureFormat(profile.width, profile.height, captureFps)
+                camera!!.changeCaptureFormat(profile.width, profile.height, profile.fps)
                 captureWidth = profile.width
                 captureHeight = profile.height
+                captureFps = profile.fps
                 deferredFormatMessageFor = null
+                onState("映像設定を適用しました: ${captureWidth}x${captureHeight}@${captureFps}fps")
             } catch (e: Exception) {
-                Log.w("RemoteCameraRTC", "Could not change camera capture format while idle", e)
-                onState("画角・解像度は次回接続時に適用します。")
-            }
-        } else if (formatChanged && peers.isNotEmpty()) {
-            val key = "${profile.width}x${profile.height}@${profile.fps}/${profile.bitrate}"
-            if (deferredFormatMessageFor != key) {
-                deferredFormatMessageFor = key
-                onState("FPSと送信レートは即時反映しました。画角・解像度は次回接続時に適用します。")
+                Log.w("RemoteCameraRTC", "Live camera format change failed", e)
+                if (profile.fps > 30) {
+                    try {
+                        camera!!.changeCaptureFormat(captureWidth, captureHeight, 30)
+                        captureFps = 30
+                        onState("このカメラは60FPSに未対応のため30FPSで継続します。")
+                    } catch (fallbackError: Exception) {
+                        Log.w("RemoteCameraRTC", "30fps fallback also failed", fallbackError)
+                        onState("映像設定の変更に失敗しました。現在の映像を維持します。")
+                    }
+                } else {
+                    onState("画角・解像度の変更に失敗しました。現在の映像を維持します。")
+                }
             }
         }
         applySenderParameters(profile)
@@ -733,7 +769,7 @@ videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
                 val params = sender.parameters
                 params.encodings.forEach { encoding ->
                     encoding.maxBitrateBps = profile.bitrate
-                    encoding.maxFramerate = profile.fps
+                    encoding.maxFramerate = minOf(profile.fps, captureFps)
                 }
                 if (!sender.setParameters(params)) {
                     Log.w("RemoteCameraRTC", "Video sender rejected quality parameters")

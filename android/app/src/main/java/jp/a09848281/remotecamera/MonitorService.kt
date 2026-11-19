@@ -14,6 +14,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.media.AudioManager
+import android.net.TrafficStats
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -72,6 +73,9 @@ class MonitorService : Service() {
     private val apiReady = CompletableDeferred<Unit>()
     private val locationRequestActive = java.util.concurrent.atomic.AtomicBoolean(false)
     private var cpuWakeLock: PowerManager.WakeLock? = null
+  private var monitorStartedAtMs = 0L
+  private var monitorRxBaseline = -1L
+  private var monitorTxBaseline = -1L
 
     private fun normalizeAudioPickupMode(value: String?): String =
         value?.takeIf { it in listOf("ambient", "balanced", "voice") } ?: "ambient"
@@ -199,6 +203,7 @@ class MonitorService : Service() {
     }
 
     private fun startMonitoringForeground() {
+        initializeMonitoringMetrics()
         createChannel()
         prefs.edit().putBoolean("monitoringEnabled", true).apply()
         val notification = notification("待機中：撮影・録音なし／Web要求を確認しています")
@@ -214,6 +219,53 @@ class MonitorService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
         updateCpuWakeLock(prefs.getBoolean("keepCpuAwake", false))
+    }
+
+    private fun readUidTraffic(): Pair<Long, Long> {
+        return TrafficStats.getUidRxBytes(applicationInfo.uid) to
+            TrafficStats.getUidTxBytes(applicationInfo.uid)
+    }
+
+    private fun initializeMonitoringMetrics() {
+        val savedStart = prefs.getLong("monitorStartedAtMs", 0L)
+        val now = System.currentTimeMillis()
+        monitorStartedAtMs = if (savedStart > 0L) savedStart else now
+        val (rx, tx) = readUidTraffic()
+        monitorRxBaseline = if (savedStart > 0L) prefs.getLong("monitorRxBaseline", rx) else rx
+        monitorTxBaseline = if (savedStart > 0L) prefs.getLong("monitorTxBaseline", tx) else tx
+        prefs.edit()
+            .putLong("monitorStartedAtMs", monitorStartedAtMs)
+            .putLong("monitorRxBaseline", monitorRxBaseline)
+            .putLong("monitorTxBaseline", monitorTxBaseline)
+            .apply()
+    }
+
+    private fun monitorMetrics(): JSONObject {
+        val (rx, tx) = readUidTraffic()
+        if (rx >= 0L && monitorRxBaseline >= 0L && rx < monitorRxBaseline) {
+            monitorRxBaseline = rx
+            prefs.edit().putLong("monitorRxBaseline", rx).apply()
+        }
+        if (tx >= 0L && monitorTxBaseline >= 0L && tx < monitorTxBaseline) {
+            monitorTxBaseline = tx
+            prefs.edit().putLong("monitorTxBaseline", tx).apply()
+        }
+        val rxDelta = if (rx >= 0L && monitorRxBaseline >= 0L) rx - monitorRxBaseline else -1L
+        val txDelta = if (tx >= 0L && monitorTxBaseline >= 0L) tx - monitorTxBaseline else -1L
+        return JSONObject()
+            .put("monitorStartedAt", monitorStartedAtMs)
+            .put("monitorElapsedMs", if (monitorStartedAtMs > 0L) maxOf(0L, System.currentTimeMillis() - monitorStartedAtMs) else 0L)
+            .put("monitorRxBytes", rxDelta)
+            .put("monitorTxBytes", txDelta)
+            .put("monitorTrafficAvailable", rxDelta >= 0L || txDelta >= 0L)
+    }
+
+    private fun clearMonitoringMetrics() {
+        monitorStartedAtMs = 0L
+        monitorRxBaseline = -1L
+        monitorTxBaseline = -1L
+        prefs.edit().remove("monitorStartedAtMs").remove("monitorRxBaseline")
+            .remove("monitorTxBaseline").apply()
     }
 
     private fun updateCpuWakeLock(enabled: Boolean) {
@@ -289,6 +341,7 @@ class MonitorService : Service() {
         rtc = null
         rtcAudioPickupMode = null
         prefs.edit().putBoolean("monitoringEnabled", false).apply()
+        clearMonitoringMetrics()
         releaseCpuWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
@@ -367,7 +420,7 @@ class MonitorService : Service() {
                                         recycleRtcForPendingAudioModeIfIdle()
                                         if (rtc == null) {
                                             val currentApi = api ?: continue
-                                            rtc = RtcEngine(this, currentApi, deviceId, secret, audioPickupMode, scope, ::notifyState) { peerSessionId, message ->
+                                            rtc = RtcEngine(this, currentApi, deviceId, secret, audioPickupMode, scope, ::notifyState, ::monitorMetrics) { peerSessionId, message ->
                                                 val name = message.optString("name")
                                                 val payload = message.optJSONObject("payload") ?: JSONObject()
                                                 val requestId = message.optString("requestId")
@@ -378,12 +431,16 @@ class MonitorService : Service() {
                                                         notifyState("閲覧端末を切断しました。残り " + (rtc?.viewerCount() ?: 0) + "/3 台")
                                                     } else {
                                                         val success = processCommand(command)
+                                                        val actualPayload = if (name == "flashlight") {
+                                                            JSONObject().put("enabled", rtc?.isFlashlightOn() == true)
+                                                        } else payload
                                                         rtc?.sendControlMessage(JSONObject()
                                                             .put("type", "command_result")
                                                             .put("requestId", requestId)
                                                             .put("name", name)
                                                             .put("success", success)
-                                                            .put("payload", payload), peerSessionId)
+                                                            .put("flashlightOn", rtc?.isFlashlightOn() == true)
+                                                            .put("payload", actualPayload), peerSessionId)
                                                     }
                                                 }
                                             }
@@ -503,7 +560,7 @@ class MonitorService : Service() {
         currentCaptureRatio = settings.optString(
             "captureRatio", prefs.getString("currentCaptureRatio", "16:9") ?: "16:9"
         ).takeIf { it in listOf("16:9", "4:3", "1:1", "9:16") } ?: "16:9"
-        currentFpsLimit = settings.optInt("fpsLimit", prefs.getInt("currentFpsLimit", 24)).coerceIn(15, 30)
+        currentFpsLimit = settings.optInt("fpsLimit", prefs.getInt("currentFpsLimit", 24)).coerceIn(15, 60)
         prefs.edit()
             .putString("currentQuality", currentQuality)
             .putString("currentDataMode", currentDataMode)
@@ -550,7 +607,7 @@ class MonitorService : Service() {
                     currentDataMode = if (localDataMode == "web") requestedDataMode else localDataMode
                     currentCaptureRatio = payload.optString("captureRatio", currentCaptureRatio)
                         .takeIf { it in listOf("16:9", "4:3", "1:1", "9:16") } ?: currentCaptureRatio
-                    currentFpsLimit = payload.optInt("fpsLimit", currentFpsLimit).coerceIn(15, 30)
+                    currentFpsLimit = payload.optInt("fpsLimit", currentFpsLimit).coerceIn(15, 60)
                     prefs.edit()
                         .putString("currentQuality", currentQuality)
                         .putString("currentDataMode", currentDataMode)
@@ -634,8 +691,15 @@ class MonitorService : Service() {
                 }.minByOrNull { it.accuracy }
 
                 // A recent cached fix is substantially faster than waiting for a new GPS lock.
-                if (cached != null && now - cached.time <= 60000L) {
+                if (cached != null && now - cached.time <= 120000L) {
+                    // Send a recent fix immediately, then refresh it with a newer fix in the background request.
                     saveLocation(cached, mode)
+                    val freshAfterCache = acquireBestLocation(manager, providers)
+                    if (freshAfterCache != null &&
+                        freshAfterCache.time > cached.time + 3000L &&
+                        (freshAfterCache.accuracy <= cached.accuracy || freshAfterCache.distanceTo(cached) >= 20f)) {
+                        saveLocation(freshAfterCache, mode)
+                    }
                     return
                 }
 
@@ -669,7 +733,7 @@ class MonitorService : Service() {
         var finishRunnable: Runnable? = null
         val best = AtomicReference<Location?>(null)
         return try {
-            withTimeoutOrNull(8000L) {
+            withTimeoutOrNull(4500L) {
                 suspendCancellableCoroutine { continuation ->
                     val listener = object : LocationListener {
                         override fun onLocationChanged(location: Location) {
@@ -678,7 +742,7 @@ class MonitorService : Service() {
                                 (location.accuracy == previous.accuracy && location.time > previous.time)) {
                                 best.set(location)
                             }
-                            if (location.accuracy <= 45f && continuation.isActive) {
+                            if (location.accuracy <= 60f && continuation.isActive) {
                                 finishRunnable?.let { handler.removeCallbacks(it) }
                                 continuation.resume(best.get())
                             }
@@ -694,7 +758,7 @@ class MonitorService : Service() {
                     providers.forEach { provider ->
                         try {
                             manager.requestLocationUpdates(
-                                provider, 1000L, 0f, listener, Looper.getMainLooper()
+                                provider, 500L, 0f, listener, Looper.getMainLooper()
                             )
                             registered = true
                         } catch (e: SecurityException) {
@@ -703,7 +767,7 @@ class MonitorService : Service() {
                             Log.w("RemoteCameraService", "Could not start provider " + provider, e)
                         }
                     }
-                    handler.postDelayed(finishRunnable!!, 6000L)
+                    handler.postDelayed(finishRunnable!!, 3500L)
                     if (!registered && continuation.isActive) {
                         handler.removeCallbacks(finishRunnable!!)
                         continuation.resume(null)
@@ -742,6 +806,7 @@ class MonitorService : Service() {
         rtcAudioPickupMode = null
         releaseCpuWakeLock()
         prefs.edit().putBoolean("monitoringEnabled", false).apply()
+        clearMonitoringMetrics()
         scope.cancel()
         super.onDestroy()
     }

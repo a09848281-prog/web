@@ -51,6 +51,20 @@ const S = {
   adaptiveLastChangeAt: 0,
   adaptiveStableSince: 0,
   flashlightOn: false,
+  flashlightAvailable: false,
+  flashlightPending: false,
+  voiceCleanLevel: 0,
+  remoteHighpass: null,
+  remoteLowpass: null,
+  remoteCompressor: null,
+  remoteGate: null,
+  remoteGateTarget: 1,
+  monitorStartedAt: 0,
+  monitorElapsedMs: 0,
+  monitorRxBytes: -1,
+  monitorTxBytes: -1,
+  monitorClockTimer: null,
+  sessionBytes: 0,
   wakeLock: null,
   keepAwakeWanted: false,
   androidStatusTimer: null,
@@ -378,6 +392,38 @@ function formatDuration(milliseconds) {
   return [hours, minutes, seconds].map(value => String(value).padStart(2, "0")).join(":");
 }
 
+function formatBytes(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return "--";
+  if (bytes < 1024) return bytes.toFixed(0) + " B";
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = bytes / 1024;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) { size /= 1024; index++; }
+  return size.toFixed(size >= 100 ? 0 : size >= 10 ? 1 : 2) + " " + units[index];
+}
+
+function updateMonitorInfo() {
+  const elapsed = S.monitorStartedAt > 0
+    ? Math.max(0, Date.now() - S.monitorStartedAt)
+    : Math.max(0, S.monitorElapsedMs || 0);
+  $("monitorUptime").textContent = S.monitorStartedAt > 0 || S.monitorElapsedMs > 0
+    ? "監視時間 " + formatDuration(elapsed)
+    : "監視時間 --";
+  const total = S.monitorRxBytes >= 0 || S.monitorTxBytes >= 0
+    ? Math.max(0, S.monitorRxBytes) + Math.max(0, S.monitorTxBytes) : -1;
+  $("monitorTraffic").textContent = "端末通信量 " + formatBytes(total);
+  $("viewerTraffic").textContent = "この閲覧端末 " + formatBytes(S.sessionBytes);
+}
+
+function updateCaptureAspectRatio() {
+  const raw = $("captureRatio") ? $("captureRatio").value : "16:9";
+  const parts = String(raw || "16:9").split(":").map(Number);
+  if (parts.length === 2 && parts.every(value => Number.isFinite(value) && value > 0)) {
+    $("videoPane").style.aspectRatio = parts[0] + " / " + parts[1];
+  }
+}
+
 function startSessionClock() {
   if (S.sessionTimer) return;
   S.connectedAt = Date.now();
@@ -413,32 +459,51 @@ async function collectConnectionStats(pc) {
     if (pc !== S.pc) return;
     let video = null;
     let candidatePair = null;
+    let inboundBytes = 0;
+    let outboundBytes = 0;
     report.forEach(stat => {
-      if (stat.type === "inbound-rtp" &&
-          (stat.kind === "video" || stat.mediaType === "video") &&
-          !stat.isRemote) video = stat;
-      if (stat.type === "candidate-pair" &&
-          stat.state === "succeeded" && (stat.selected || stat.nominated)) candidatePair = stat;
+      if (stat.type === "inbound-rtp" && !stat.isRemote) {
+        inboundBytes += Number(stat.bytesReceived) || 0;
+        if (stat.kind === "video" || stat.mediaType === "video") video = stat;
+      }
+      if (stat.type === "outbound-rtp" && !stat.isRemote) {
+        outboundBytes += Number(stat.bytesSent) || 0;
+      }
+      if (stat.type === "candidate-pair" && stat.state === "succeeded" &&
+          (stat.selected || stat.nominated)) candidatePair = stat;
     });
     if (!video) return;
+    const pairHasCounters = candidatePair &&
+      typeof candidatePair.bytesReceived === "number" &&
+      typeof candidatePair.bytesSent === "number";
+    const totalBytes = pairHasCounters
+      ? Math.max(0, candidatePair.bytesReceived) + Math.max(0, candidatePair.bytesSent)
+      : inboundBytes + outboundBytes;
     const current = {
       timestamp: Number(video.timestamp) || Date.now(),
       bytes: Number(video.bytesReceived) || 0,
+      totalBytes,
       packetsReceived: Number(video.packetsReceived) || 0,
       packetsLost: Number(video.packetsLost) || 0,
       frames: Number(video.framesDecoded) || 0
     };
     const previous = S.previousStats;
     S.previousStats = current;
-    if (!previous && current.frames > 0) S.hasReceivedVideoFrame = true;
     const rttMs = candidatePair && Number.isFinite(Number(candidatePair.currentRoundTripTime))
       ? Math.round(Number(candidatePair.currentRoundTripTime) * 1000) : null;
     if (!previous) {
+      S.sessionBytes = Math.max(S.sessionBytes, current.totalBytes);
+      updateMonitorInfo();
+      if (current.frames > 0) S.hasReceivedVideoFrame = true;
       $("connectionMetrics").textContent = "通信状態：測定中";
       return;
     }
     const elapsed = Math.max(0.2, (current.timestamp - previous.timestamp) / 1000);
     const bitrate = Math.max(0, (current.bytes - previous.bytes) * 8 / elapsed / 1000);
+    const trafficDelta = current.totalBytes >= previous.totalBytes
+      ? current.totalBytes - previous.totalBytes : 0;
+    S.sessionBytes += trafficDelta;
+    updateMonitorInfo();
     const decodedDelta = Math.max(0, current.frames - previous.frames);
     const fps = decodedDelta / elapsed;
     if (decodedDelta > 0) {
@@ -447,8 +512,6 @@ async function collectConnectionStats(pc) {
       $("videoState").textContent = "映像受信中";
       S.statsFreezeCount = 0;
     } else if (S.hasReceivedVideoFrame) {
-      // Only report a freeze after at least one remote frame has arrived.
-      // This prevents a slow first-frame negotiation from triggering retries.
       S.statsFreezeCount += 1;
     } else {
       S.statsFreezeCount = 0;
@@ -465,7 +528,7 @@ async function collectConnectionStats(pc) {
       ? "不安定" : loss > 3 || (rttMs !== null && rttMs > 280) || fps < 17 ? "注意" : "良好";
     updateAdaptiveQuality(loss, fps, rttMs);
     $("connectionMetrics").textContent =
-      "通信 " + grade + "　受信 " + bitrate.toFixed(0) + " kbps　" +
+      "通信 " + grade + "　映像受信 " + bitrate.toFixed(0) + " kbps　" +
       "映像 " + fps.toFixed(0) + " fps　" +
       "遅延 " + (rttMs === null ? "--" : rttMs + " ms") + "　" +
       "損失 " + loss.toFixed(1) + "%";
@@ -601,15 +664,17 @@ function attachRemoteAudio() {
   const liveTracks = S.remoteAudioTracks.filter(track => track.readyState === "live");
   if (!liveTracks.length) {
     stopAudioMeter();
+    if (S.remoteAudioSource) {
+      try { S.remoteAudioSource.disconnect(); } catch (_) {}
+      S.remoteAudioSource = null;
+    }
     $("audioState").textContent = "Androidマイク待機中";
     return;
   }
   if (!prepareAudioOutput()) {
     $("remoteVideo").muted = false;
     setReceiveVolume(S.receiveVolume, false);
-    $("audioState").textContent = S.receiveVolume > 100
-      ? "Androidマイク受信中（この環境では受信音量100%まで）"
-      : "Androidマイク受信中（Safari標準音声）";
+    $("audioState").textContent = "Androidマイク受信中（音声フィルター非対応）";
     return;
   }
   try {
@@ -618,28 +683,59 @@ function attachRemoteAudio() {
       S.remoteAudioSource = null;
     }
     stopAudioMeter();
-    const audioStream = new MediaStream(liveTracks);
-    S.remoteAudioSource = S.audioContext.createMediaStreamSource(audioStream);
+    S.remoteAudioSource = S.audioContext.createMediaStreamSource(new MediaStream(liveTracks));
+    S.remoteHighpass = S.audioContext.createBiquadFilter();
+    S.remoteHighpass.type = "highpass";
+    S.remoteLowpass = S.audioContext.createBiquadFilter();
+    S.remoteLowpass.type = "lowpass";
+    S.remoteCompressor = S.audioContext.createDynamicsCompressor();
+    S.remoteGate = S.audioContext.createGain();
+    S.remoteGateTarget = 1;
     S.remoteAnalyser = S.audioContext.createAnalyser();
     S.remoteAnalyser.fftSize = 512;
-    S.remoteAudioSource.connect(S.remoteAnalyser);
-    S.remoteAnalyser.connect(S.remoteGain);
+    S.remoteAudioSource.connect(S.remoteHighpass);
+    S.remoteHighpass.connect(S.remoteLowpass);
+    S.remoteLowpass.connect(S.remoteCompressor);
+    S.remoteCompressor.connect(S.remoteAnalyser);
+    S.remoteAnalyser.connect(S.remoteGate);
+    S.remoteGate.connect(S.remoteGain);
+    updateVoiceCleaning();
     startAudioMeter();
     $("remoteVideo").muted = true;
-    $("audioState").textContent = "Androidマイク受信中";
+    $("audioState").textContent = "Androidマイク受信中（Web音声フィルター）";
     if (S.audioContext.state === "suspended") {
       S.audioContext.resume().catch(error => console.debug("Android audio resume failed", error));
     }
   } catch (error) {
     console.warn("Remote audio routing failed; falling back to media element", error);
+    stopAudioMeter();
     $("remoteVideo").muted = false;
     $("audioState").textContent = "Androidマイク受信中（標準音声へ切替）";
+  }
+}
+
+function updateVoiceCleaning() {
+  const level = Math.max(0, Math.min(100, Number(S.voiceCleanLevel) || 0));
+  $("voiceCleanValue").textContent = level + "%";
+  $("voiceClean").value = String(level);
+  if (!S.audioContext) return;
+  const now = S.audioContext.currentTime;
+  if (S.remoteHighpass && S.remoteLowpass && S.remoteCompressor && S.remoteGate) {
+    const amount = level / 100;
+    S.remoteHighpass.frequency.setTargetAtTime(20 + amount * 95, now, 0.025);
+    S.remoteLowpass.frequency.setTargetAtTime(20000 - amount * 12500, now, 0.025);
+    S.remoteCompressor.threshold.setTargetAtTime(amount === 0 ? 0 : -18 - amount * 14, now, 0.03);
+    S.remoteCompressor.ratio.setTargetAtTime(amount === 0 ? 1 : 2 + amount * 6, now, 0.03);
+    S.remoteCompressor.knee.setTargetAtTime(amount === 0 ? 0 : 16, now, 0.03);
+    S.remoteGateTarget = 1;
+    S.remoteGate.gain.setTargetAtTime(1, now, 0.03);
   }
 }
 
 function startAudioMeter() {
   if (!S.remoteAnalyser || S.audioMeterFrame !== null) return;
   const data = new Uint8Array(S.remoteAnalyser.fftSize);
+  let gateUpdateCount = 0;
   const tick = () => {
     if (!S.remoteAnalyser) { S.audioMeterFrame = null; return; }
     S.remoteAnalyser.getByteTimeDomainData(data);
@@ -648,6 +744,19 @@ function startAudioMeter() {
     const rms = Math.sqrt(sum / data.length);
     $("audioLevel").value = Math.min(1, rms * 3);
     $("audioLevelText").textContent = rms < 0.008 ? "静か" : rms < 0.04 ? "小さい音" : rms < 0.16 ? "音声受信中" : "大きな音";
+    gateUpdateCount++;
+    if (S.remoteGate && S.audioContext && S.voiceCleanLevel > 0 && gateUpdateCount % 4 === 0) {
+      const amount = S.voiceCleanLevel / 100;
+      const threshold = 0.0008 + amount * 0.0045;
+      const target = rms < threshold ? 1 - amount * 0.65 : 1;
+      if (Math.abs(target - S.remoteGateTarget) > 0.06) {
+        S.remoteGateTarget = target;
+        S.remoteGate.gain.setTargetAtTime(target, S.audioContext.currentTime, target < 1 ? 0.12 : 0.045);
+      }
+    } else if (S.remoteGate && S.audioContext && S.voiceCleanLevel === 0 && S.remoteGateTarget !== 1) {
+      S.remoteGateTarget = 1;
+      S.remoteGate.gain.setTargetAtTime(1, S.audioContext.currentTime, 0.04);
+    }
     S.audioMeterFrame = requestAnimationFrame(tick);
   };
   S.audioMeterFrame = requestAnimationFrame(tick);
@@ -655,13 +764,19 @@ function startAudioMeter() {
 function stopAudioMeter() {
   if (S.audioMeterFrame !== null) cancelAnimationFrame(S.audioMeterFrame);
   S.audioMeterFrame = null;
-  if (S.remoteAnalyser) {
-    try { S.remoteAnalyser.disconnect(); } catch (_) {}
-  }
+  [S.remoteAnalyser, S.remoteHighpass, S.remoteLowpass, S.remoteCompressor, S.remoteGate].forEach(node => {
+    if (node) { try { node.disconnect(); } catch (_) {} }
+  });
   S.remoteAnalyser = null;
+  S.remoteHighpass = null;
+  S.remoteLowpass = null;
+  S.remoteCompressor = null;
+  S.remoteGate = null;
+  S.remoteGateTarget = 1;
   $("audioLevel").value = 0;
   $("audioLevelText").textContent = "待機中";
 }
+
 function handleControlMessage(raw) {
   let data;
   try { data = typeof raw === "string" ? JSON.parse(raw) : raw; }
@@ -677,27 +792,49 @@ function handleControlMessage(raw) {
       " / " + (data.cameraFacing === "front" ? "前面カメラ" : "背面カメラ") +
       " / ライト " + (data.flashlightOn ? "ON" : "OFF");
     S.flashlightOn = !!data.flashlightOn;
-    updateFlashlightButton(!!data.flashlightAvailable, S.flashlightOn);
+    S.flashlightAvailable = !!data.flashlightAvailable;
+    S.monitorStartedAt = Number(data.monitorStartedAt) || 0;
+    S.monitorElapsedMs = Number(data.monitorElapsedMs) || 0;
+    S.monitorRxBytes = Number(data.monitorRxBytes);
+    S.monitorTxBytes = Number(data.monitorTxBytes);
+    if (!Number.isFinite(S.monitorRxBytes)) S.monitorRxBytes = -1;
+    if (!Number.isFinite(S.monitorTxBytes)) S.monitorTxBytes = -1;
+    updateMonitorInfo();
+    if (S.monitorStartedAt && !S.monitorClockTimer) {
+      S.monitorClockTimer = setInterval(updateMonitorInfo, 1000);
+    }
+    if (!S.monitorStartedAt && S.monitorClockTimer) {
+      clearInterval(S.monitorClockTimer);
+      S.monitorClockTimer = null;
+    }
+    S.flashlightPending = false;
+    updateFlashlightButton(S.flashlightAvailable, S.flashlightOn);
     return;
   }
-  if (data.type === "command_result") {
-    if (data.name === "flashlight") {
-      if (data.success) {
-        S.flashlightOn = !!(data.payload && data.payload.enabled);
-        toast(S.flashlightOn ? "AndroidライトをONにしました。" : "AndroidライトをOFFにしました。");
-        requestDeviceStatus().catch(() => {});
-      } else {
-        toast("ライトを切り替えできませんでした。背面カメラとライト対応を確認してください。");
+  if (data.type === "command_result" && data.name === "flashlight") {
+    S.flashlightPending = false;
+    if (data.success) {
+      if (data.payload && typeof data.payload.enabled === "boolean") {
+        S.flashlightOn = data.payload.enabled;
+      } else if (typeof data.flashlightOn === "boolean") {
+        S.flashlightOn = data.flashlightOn;
       }
+      updateFlashlightButton(S.flashlightAvailable, S.flashlightOn);
+      toast(S.flashlightOn ? "AndroidライトをONにしました。" : "AndroidライトをOFFにしました。");
+      window.setTimeout(() => requestDeviceStatus().catch(() => {}), 350);
+    } else {
+      updateFlashlightButton(S.flashlightAvailable, S.flashlightOn);
+      toast("ライトを切り替えできませんでした。端末のカメラ使用状態を確認してください。");
     }
   }
 }
 
 function updateFlashlightButton(available, enabled) {
   const button = $("flashlight");
-  button.disabled = !S.pc || !available;
+  button.disabled = !S.pc || !available || S.flashlightPending;
   button.classList.toggle("active", enabled);
-  button.textContent = enabled ? "🔦 ライト ON" : "🔦 ライト OFF";
+  button.classList.toggle("pending", S.flashlightPending);
+  button.textContent = S.flashlightPending ? "🔦 切替中…" : enabled ? "🔦 ライト ON" : "🔦 ライト OFF";
   button.title = available ? "Android背面カメラのライトを切り替えます" : "この端末ではライトを利用できません";
 }
 
@@ -788,18 +925,40 @@ async function takeSnapshot() {
 
 async function toggleFlashlight() {
   if (!S.pc) return toast("先にAndroidへ接続してください。");
+  if (S.flashlightPending) return;
+  S.flashlightPending = true;
+  updateFlashlightButton(S.flashlightAvailable, S.flashlightOn);
   const next = !S.flashlightOn;
   try {
+    if (S.controlChannel && S.controlChannel.readyState === "connecting") {
+      await new Promise(resolve => {
+        const channel = S.controlChannel;
+        let done = false;
+        const finish = () => { if (!done) { done = true; resolve(); } };
+        channel.addEventListener("open", finish, { once: true });
+        window.setTimeout(finish, 700);
+      });
+    }
     const result = await sendControlCommand("flashlight", { enabled: next });
-    if (result.delivered === "webrtc") {
-      toast("Androidライトの切替要求を送信しました。");
-    } else {
-      S.flashlightOn = next;
-      updateFlashlightButton(true, next);
-      toast("ライト切替要求をGAS経由で送信しました。");
-      setTimeout(() => requestDeviceStatus().catch(() => {}), 1800);
+    const deadline = Date.now() + (result.delivered === "webrtc" ? 2200 : 4200);
+    while (S.flashlightPending && Date.now() < deadline) {
+      await new Promise(resolve => window.setTimeout(resolve, 80));
+    }
+    if (S.flashlightPending && S.controlChannel && S.controlChannel.readyState === "open") {
+      await requestDeviceStatus().catch(() => {});
+      const statusDeadline = Date.now() + 900;
+      while (S.flashlightPending && Date.now() < statusDeadline) {
+        await new Promise(resolve => window.setTimeout(resolve, 80));
+      }
+    }
+    if (S.flashlightPending) {
+      S.flashlightPending = false;
+      updateFlashlightButton(S.flashlightAvailable, S.flashlightOn);
+      toast("Androidからライト状態の応答がありません。通信状態を確認して再度押してください。");
     }
   } catch (error) {
+    S.flashlightPending = false;
+    updateFlashlightButton(S.flashlightAvailable, S.flashlightOn);
     toast("ライト操作に失敗しました：" + error.message);
   }
 }
@@ -1154,6 +1313,8 @@ async function connect(automatic = false) {
     localAudioTrack.enabled = false;
     S.session = rid();
     S.seq = 0;
+    S.sessionBytes = 0;
+    updateMonitorInfo();
     S.statsFreezeCount = 0;
     S.hasReceivedVideoFrame = false;
     // STUN can improve NAT traversal. A TURN relay is still needed on networks
@@ -1186,7 +1347,7 @@ async function connect(automatic = false) {
       if (S.androidStatusTimer) clearInterval(S.androidStatusTimer);
       S.androidStatusTimer = setInterval(() => {
         requestDeviceStatus().catch(error => console.debug("Periodic status request failed", error));
-      }, 60000);
+      }, 15000);
     };
     controlChannel.onmessage = event => handleControlMessage(event.data);
     controlChannel.onclose = () => {
@@ -1505,6 +1666,7 @@ async function loadSettings() {
   $("dataMode").value = settings.dataMode || "standard";
   $("captureRatio").value = settings.captureRatio || "16:9";
   $("fpsLimit").value = String(settings.fpsLimit || 24);
+  updateCaptureAspectRatio();
   S.captureRatio = $("captureRatio").value;
   S.fpsLimit = Number($("fpsLimit").value);
   $("connectedLoc").checked = !!settings.connectedLocationEnabled;
@@ -1887,10 +2049,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
   $("copyLocation").addEventListener("click", copyCoordinates);
+  updateCaptureAspectRatio();
+  updateMonitorInfo();
   const storedVolume = storageGet("rc_receive_volume_v1", null);
   const savedVolume = storedVolume === null ? 70 : Number(storedVolume);
   setReceiveVolume(Number.isFinite(savedVolume) ? savedVolume : 70, false);
   $("volume").addEventListener("input", event => setReceiveVolume(Number(event.target.value), true));
+  const storedVoiceClean = storageGet("rc_voice_clean_v422", "0");
+  const initialVoiceClean = Number(storedVoiceClean);
+  S.voiceCleanLevel = Number.isFinite(initialVoiceClean) ? Math.max(0, Math.min(100, initialVoiceClean)) : 0;
+  $("voiceClean").value = String(S.voiceCleanLevel);
+  updateVoiceCleaning();
+  $("voiceClean").addEventListener("input", event => {
+    S.voiceCleanLevel = Math.max(0, Math.min(100, Number(event.target.value) || 0));
+    updateVoiceCleaning();
+    storageSet("rc_voice_clean_v422", String(S.voiceCleanLevel));
+  });
   const storedAndroidSpeakerVolume = storageGet("rc_android_speaker_volume_v1", null);
   const savedAndroidSpeakerVolume = storedAndroidSpeakerVolume === null ? 70 : Number(storedAndroidSpeakerVolume);
   S.androidSpeakerVolume = Number.isFinite(savedAndroidSpeakerVolume)
@@ -1917,7 +2091,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     S.appliedAdaptiveMode = $("dataMode").value === "auto" ? "standard" : $("dataMode").value;
     saveSettings().catch(error => toast(error.message));
   });
-  $("captureRatio").addEventListener("change", () => saveSettings().catch(error => toast(error.message)));
+  $("captureRatio").addEventListener("change", () => {
+    updateCaptureAspectRatio();
+    saveSettings().catch(error => toast(error.message));
+  });
   $("fpsLimit").addEventListener("change", () => saveSettings().catch(error => toast(error.message)));
   $("refreshStatus").disabled = true;
   updateViewerTransform();
