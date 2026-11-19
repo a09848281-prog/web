@@ -866,7 +866,8 @@ function stopMotionDetection(keepEnabled = true) {
   if (S.motionTimer) clearInterval(S.motionTimer);
   S.motionTimer = null;
   S.motionPrevious = null;
-  if (!keepEnabled) $("motionState").textContent = "動体検知 OFF";
+  $("motionState").textContent = keepEnabled && $("motionEnabled").checked
+    ? "接続待ち・映像受信時に再開" : "動体検知 OFF";
 }
 function startMotionDetection() {
   if (S.motionTimer || !S.pc) return;
@@ -1255,12 +1256,13 @@ async function disconnect(sendCommand = true, preserveMic = false) {
           type: "command", name: "disconnect", payload: {}, sentAt: Date.now()
         }));
       } catch (error) {
-        console.warn("Data-channel disconnect failed; using GAS fallback", error);
-        api("send_command", {
+        console.warn("Data-channel disconnect failed; sending a session-scoped bye signal", error);
+        api("send_signal", {
           controllerToken: S.device.controllerToken,
           deviceId: S.device.deviceId,
-          command: "disconnect",
-          payload: {}
+          sessionId: S.session,
+          recipient: "device",
+          kind: "bye"
         }).catch(() => {});
       }
     } else {
