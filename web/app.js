@@ -1666,6 +1666,7 @@ async function loadSettings() {
   $("dataMode").value = settings.dataMode || "standard";
   $("captureRatio").value = settings.captureRatio || "16:9";
   $("fpsLimit").value = String(settings.fpsLimit || 24);
+  updateCaptureAspectRatio();
   S.captureRatio = $("captureRatio").value;
   S.fpsLimit = Number($("fpsLimit").value);
   $("connectedLoc").checked = !!settings.connectedLocationEnabled;
