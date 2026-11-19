@@ -1,0 +1,15 @@
+{
+  "id": "./",
+  "name": "Remote Camera 4.5 Preview",
+  "short_name": "Remote Camera",
+  "description": "AIを使わない範囲指定式の動体検知を備えたRemote Cameraプレビュー",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
