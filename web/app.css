@@ -250,3 +250,70 @@
 }
 
 /* v4.2.2 side-by-side preview publication marker */
+
+
+/* v4.5: calm white interface and touch-friendly motion-zone overlay */
+:root{color-scheme:light;background:#fff;color:#64748b}
+html,body{background:#fff;color:#64748b}
+.top{background:#fff;color:#64748b;border-bottom:1px solid #edf1f5;box-shadow:none}
+.top b{color:#526174}
+.top small{color:#94a3b8}
+.pill{background:#f7f9fc;color:#64748b;border:1px solid #e7edf4}
+.pill.online{background:#f0faf4;color:#4f8a69;border-color:#d8efdf}
+button{background:#fff;color:#64748b;border:1px solid #e5ebf2;box-shadow:none}
+button:hover:not(:disabled){background:#f8fbff;border-color:#cbdcf0}
+.primary{background:#f1f7ff;color:#527db8;border:1px solid #d8e7fa}
+.primary:hover:not(:disabled){background:#eaf3ff}
+.link,.download{color:#6d91bf}
+.danger{color:#b77d86}
+input,select{background:#fff;color:#64748b;border-color:#e3eaf2}
+.side,.view{background:#fff;border-color:#edf1f5;box-shadow:0 2px 12px rgba(112,132,154,.06)}
+.view{color:#64748b}
+.deviceitem{background:#fff;border-color:#edf1f5;color:#64748b}
+.deviceitem.selected{background:#f2f7ff;border-color:#d7e6f8;color:#5b83b5}
+.metrics{background:#f8fafc;color:#7a8798}
+.view .videoPane{background:#fff;border:1px solid #edf1f5}
+#placeholder{color:#758397}
+#placeholder small{color:#9aa7b7}
+.view .videoPane footer{z-index:4;background:linear-gradient(transparent,rgba(248,250,252,.96));color:#718096}
+.view #locationInfo{color:#718096}
+#toast{background:#fff;color:#64748b;border:1px solid #e5ebf2;box-shadow:0 5px 22px rgba(112,132,154,.12)}
+dialog{background:#fff;color:#64748b;box-shadow:0 8px 35px rgba(112,132,154,.14)}
+dialog::backdrop{background:rgba(255,255,255,.78)}
+.dialog p{color:#8190a2}
+.ptt,.viewerControls #ptt.pttProminent{background:#f1f7ff;color:#668bbd;border:1px solid #dce9f8;box-shadow:none}
+.ptt.active,.viewerControls #ptt.pttProminent.active{background:#e8f2ff;color:#4e78ae}
+#flashlight{background:#fffaf0;color:#a48752;border-color:#f1e8d3}
+#flashlight.active{background:#fff5df;color:#9b7a3f}
+#keepAwake.active{background:#f0faf4;color:#5f9475}
+.imageViewerDialog[open]{background:#fff;color:#64748b}
+.imageViewerDialog::backdrop{background:rgba(255,255,255,.94)}
+.imageViewerHeader{background:#fff;color:#64748b;border-bottom:1px solid #edf1f5}
+.imageViewerHeader button{background:#fff;color:#64748b;border:1px solid #e5ebf2}
+.imageViewerStage{background:#fff}
+.motionThumb{background:#fff;color:#6d91bf;border-color:#e5ebf2}
+.motionThumb img{background:#f8fafc}
+.motionTools{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:12px 0;padding:12px;background:#fff;border:1px solid #e8eef5;border-radius:12px}
+.motionTools label{display:flex;align-items:center;gap:8px;margin:2px 0;color:#718096}
+.motionTools select{width:100%}
+.motionToolsTitle{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#64748b;font-size:13px}
+#motionRegionCount{font-size:11px;color:#93a2b4;white-space:nowrap}
+.motionRegionActions{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.motionRegionActions button{min-height:38px;font-size:12px;padding:7px 8px}
+.motionRegionList{display:flex;flex-direction:column;gap:5px}
+.motionRegionRow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 8px;border:1px solid #edf1f5;border-radius:9px;background:#fff}
+.motionRegionRow label{display:flex;align-items:center;gap:7px;margin:0;min-width:0}
+.motionRegionRow label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.motionRegionRemove{min-height:30px;padding:4px 9px;font-size:11px;flex:0 0 auto}
+#motionState{font-size:11px;color:#7d8ca0;line-height:1.5}
+.motionOverlay{position:absolute;z-index:3;transform-origin:center center;pointer-events:none;overflow:visible}
+.motionOverlay.drawing{pointer-events:auto;touch-action:none;cursor:crosshair}
+.motionRegionBox{position:absolute;box-sizing:border-box;border:2px solid #86addb;background:rgba(161,196,235,.12);border-radius:5px;pointer-events:none}
+.motionRegionBox span{position:absolute;left:3px;top:3px;max-width:calc(100% - 6px);padding:2px 6px;border-radius:5px;background:rgba(255,255,255,.94);color:#6b8eb8;font-size:10px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.motionRegionBox.inactive{border-style:dashed;border-color:#c5cfda;background:rgba(226,232,240,.14)}
+.motionRegionBox.inactive span{color:#93a0b0}
+.motionRegionBox.draft{border-style:dashed;border-color:#6f9dcc;background:rgba(190,215,242,.18)}
+@media(max-width:650px){
+ .motionRegionActions{grid-template-columns:1fr}
+ .motionRegionRow{flex-wrap:nowrap}
+}
