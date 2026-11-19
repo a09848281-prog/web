@@ -64,9 +64,36 @@ const S = {
   motionPrevious: null,
   motionLastTriggered: 0,
   motionEvents: [],
-  viewerHeartbeatTimer: null
+  viewerHeartbeatTimer: null,
+  imageViewerSource: "",
+  imageViewerFilename: "",
+  imageObjectUrl: ""
 };
 
+function storageGet(key, fallback = "") {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : value;
+  } catch (_) {
+    return fallback;
+  }
+}
+function storageSet(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+function storageRemove(key) {
+  try {
+    localStorage.removeItem(key);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
 function rid() {
   return (crypto.randomUUID && crypto.randomUUID()) ||
     (Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -87,7 +114,7 @@ function message(id, text, good = false) {
 }
 function readDevices() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const parsed = JSON.parse(storageGet(STORAGE_KEY, "[]"));
     return Array.isArray(parsed) ? parsed.filter(x =>
       x && typeof x.deviceId === "string" &&
       typeof x.controllerToken === "string" && x.controllerToken.length > 20
@@ -97,7 +124,7 @@ function readDevices() {
   }
 }
 function saveDevices() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(S.devices));
+  return storageSet(STORAGE_KEY, JSON.stringify(S.devices));
 }
 async function loadConfig() {
   const response = await fetch("./config.json", { cache: "no-store" });
@@ -249,7 +276,7 @@ function selectDevice(device) {
     return;
   }
   S.device = device;
-  localStorage.setItem(SELECTED_KEY, device.deviceId);
+  storageSet(SELECTED_KEY, device.deviceId);
   $("deviceName").textContent = device.deviceName || "Android端末";
   $("deviceMeta").textContent = "端末ID: " + device.deviceId + " / 閲覧名: " + (device.controllerName || "このブラウザー");
   renderDevices();
@@ -265,7 +292,7 @@ function refreshDeviceList() {
     if (updated) S.device = updated;
   }
   if (!S.device && S.devices.length) {
-    const id = localStorage.getItem(SELECTED_KEY);
+    const id = storageGet(SELECTED_KEY, "");
     selectDevice(S.devices.find(x => x.deviceId === id) || S.devices[0]);
   } else if (!S.devices.length) {
     S.device = null;
@@ -295,14 +322,16 @@ async function claimDevice() {
     };
     S.devices = readDevices().filter(x => x.deviceId !== device.deviceId);
     S.devices.push(device);
-    saveDevices();
+    const devicesSaved = saveDevices();
     $("pairCode").value = "";
     $("pairName").value = "";
     $("pairDialog").close();
     refreshDeviceList();
     selectDevice(device);
     $("viewerCount").textContent = "閲覧端末: " + (result.viewerCount || 1) + "/" + (result.maxViewers || 3);
-    toast("このブラウザーを閲覧端末として登録しました。");
+    toast(devicesSaved
+      ? "このブラウザーを閲覧端末として登録しました。"
+      : "登録自体は完了しましたが、このブラウザーの保存領域が使えません。タブを閉じる前に保存設定を確認してください。");
   } catch (error) {
     message("pairMessage", error.message);
   } finally {
@@ -312,23 +341,24 @@ async function claimDevice() {
 
 function waitIce(pc, ms) {
   return new Promise(resolve => {
-    if (pc.iceGatheringState === "complete") return resolve();
+    if (pc.iceGatheringState === "complete") return resolve(true);
     let done = false;
+    let timer = null;
     const finish = () => {
       if (done) return;
       done = true;
-      clearTimeout(timer);
+      if (timer !== null) clearTimeout(timer);
       pc.removeEventListener("icegatheringstatechange", check);
-      resolve();
+      resolve(pc.iceGatheringState === "complete");
     };
     const check = () => {
       if (pc.iceGatheringState === "complete") finish();
     };
-    const timer = setTimeout(finish, ms);
+    timer = setTimeout(finish, ms);
     pc.addEventListener("icegatheringstatechange", check);
   });
 }
-async function formatDuration(milliseconds) {
+function formatDuration(milliseconds) {
   const total = Math.max(0, Math.floor(milliseconds / 1000));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
@@ -668,6 +698,52 @@ async function requestDeviceStatus() {
   }));
 }
 
+function openImageViewer(source, filename, title, ownsObjectUrl = false) {
+  if (!source) return toast("表示できる画像がありません。");
+  releaseImageViewerSource();
+  S.imageViewerSource = source;
+  S.imageViewerFilename = filename || "remote-camera-image.jpg";
+  S.imageObjectUrl = ownsObjectUrl && String(source).startsWith("blob:") ? source : "";
+  $("imageViewerImage").src = source;
+  $("imageViewerImage").alt = title || "受信画像";
+  $("imageViewerTitle").textContent = title || "受信画像";
+  $("imageViewerDownload").disabled = false;
+  const dialog = $("imageViewerDialog");
+  if (!dialog.open) dialog.showModal();
+}
+function releaseImageViewerSource() {
+  $("imageViewerImage").removeAttribute("src");
+  if (S.imageObjectUrl) {
+    try { URL.revokeObjectURL(S.imageObjectUrl); } catch (_) {}
+  }
+  S.imageViewerSource = "";
+  S.imageViewerFilename = "";
+  S.imageObjectUrl = "";
+}
+function saveImageViewer() {
+  if (!S.imageViewerSource) return toast("保存する画像がありません。");
+  const anchor = document.createElement("a");
+  anchor.href = S.imageViewerSource;
+  anchor.download = S.imageViewerFilename || "remote-camera-image.jpg";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  toast("画像の保存を開始しました。");
+}
+async function toggleImageFullscreen() {
+  const dialog = $("imageViewerDialog");
+  try {
+    if (document.fullscreenElement === dialog) {
+      await document.exitFullscreen();
+    } else if (dialog.requestFullscreen) {
+      await dialog.requestFullscreen();
+    } else {
+      toast("このブラウザーでは画像ビューアーが画面いっぱいに表示されています。");
+    }
+  } catch (error) {
+    toast("全画面表示を切り替えできませんでした: " + error.message);
+  }
+}
 async function takeSnapshot() {
   const video = $("remoteVideo");
   if (!S.pc || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
@@ -680,19 +756,20 @@ async function takeSnapshot() {
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("画像処理を開始できません。");
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
     if (!blob) throw new Error("画像データを作成できませんでした。");
     const url = URL.createObjectURL(blob);
+    const filename = "remote-camera-" + new Date().toISOString().replace(/[:.]/g, "-") + ".jpg";
+    openImageViewer(url, filename, "受信画像", true);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "remote-camera-" + new Date().toISOString().replace(/[:.]/g, "-") + ".png";
+    anchor.download = filename;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-    toast("静止画をPNGで保存しました。");
+    toast("受信画像を全画面表示しました。保存ボタンからも保存できます。");
   } catch (error) {
-    toast("静止画を保存できません：" + error.message);
+    toast("静止画を作成できません: " + error.message);
   }
 }
 
@@ -851,16 +928,22 @@ function startVideoWatchdog(pc) {
 const MOTION_STORAGE_KEY = "rc_motion_events_v42";
 function readMotionEvents() {
   try {
-    const value = JSON.parse(localStorage.getItem(MOTION_STORAGE_KEY) || "[]");
-    return Array.isArray(value) ? value.slice(0, 12) : [];
+    const value = JSON.parse(storageGet(MOTION_STORAGE_KEY, "[]"));
+    if (!Array.isArray(value)) return [];
+    return value.filter(event =>
+      event && typeof event.timestamp === "string" &&
+      Number.isFinite(Date.parse(event.timestamp)) &&
+      Number.isFinite(Number(event.ratio)) &&
+      (typeof event.image !== "string" ||
+        event.image === "" ||
+        (event.image.startsWith("data:image/jpeg;base64,") && event.image.length <= 180000))
+    ).slice(0, 12);
   } catch (_) { return []; }
 }
 function saveMotionEvents() {
-  try { localStorage.setItem(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents.slice(0, 12))); }
-  catch (_) {
-    S.motionEvents = S.motionEvents.slice(0, 12).map(event => ({ ...event, image: "" }));
-    try { localStorage.setItem(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents)); } catch (_) {}
-  }
+  if (storageSet(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents.slice(0, 12)))) return;
+  S.motionEvents = S.motionEvents.slice(0, 12).map(event => ({ ...event, image: "" }));
+  storageSet(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents));
 }
 function stopMotionDetection(keepEnabled = true) {
   if (S.motionTimer) clearInterval(S.motionTimer);
@@ -966,10 +1049,26 @@ function renderMotionEvents() {
       " · 画面変化 " + (Number(event.ratio) * 100).toFixed(1) + "%";
     row.appendChild(detail);
     if (event.image) {
+      const filename = "remote-camera-motion-" + event.timestamp.replace(/[^0-9T-]/g, "-") + ".jpg";
+      const preview = document.createElement("button");
+      preview.type = "button";
+      preview.className = "motionThumb";
+      preview.setAttribute("aria-label", "検知画像を全画面表示");
+      const image = document.createElement("img");
+      image.src = event.image;
+      image.alt = "動体検知時の静止画";
+      image.loading = "lazy";
+      const label = document.createElement("span");
+      label.textContent = "画像を表示";
+      preview.append(image, label);
+      preview.addEventListener("click", () => openImageViewer(
+        event.image, filename, "動体検知画像 · " + new Date(event.timestamp).toLocaleString()
+      ));
+      row.appendChild(preview);
       const link = document.createElement("a");
       link.href = event.image;
-      link.download = "remote-camera-motion-" + event.timestamp.replace(/[:.]/g, "-") + ".jpg";
-      link.textContent = "静止画を保存";
+      link.download = filename;
+      link.textContent = "画像を保存";
       row.appendChild(link);
     }
     host.appendChild(row);
@@ -1147,7 +1246,10 @@ async function connect(automatic = false) {
     };
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await waitIce(pc, 20000);
+    const iceReady = await waitIce(pc, 25000);
+    if (!iceReady) {
+      throw new Error("ICE候補の収集が25秒以内に完了しませんでした。通信状態を確認して再接続します。");
+    }
     await api("send_signal", {
       controllerToken: S.device.controllerToken,
       deviceId: S.device.deviceId,
@@ -1248,33 +1350,25 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   stopSessionClock();
   if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
   S.reconnectResetTimer = null;
-  if (sendCommand && S.pc && S.device) {
-    // Prefer peer-to-peer control; only use GAS when the data channel is not open.
+  if (S.pc && S.device && S.session) {
+    // Send both paths: the direct data-channel message is fast, while a
+    // session-scoped GAS bye survives a data-channel close racing with teardown.
     if (S.controlChannel && S.controlChannel.readyState === "open") {
       try {
         S.controlChannel.send(JSON.stringify({
-          type: "command", name: "disconnect", payload: {}, sentAt: Date.now()
+          type: "command", name: "disconnect", payload: {}, sessionId: S.session, sentAt: Date.now()
         }));
       } catch (error) {
-        console.warn("Data-channel disconnect failed; sending a session-scoped bye signal", error);
-        api("send_signal", {
-          controllerToken: S.device.controllerToken,
-          deviceId: S.device.deviceId,
-          sessionId: S.session,
-          recipient: "device",
-          kind: "bye"
-        }).catch(() => {});
+        console.debug("Direct disconnect message could not be queued", error);
       }
-    } else {
-      const signal = {
-        controllerToken: S.device.controllerToken,
-        deviceId: S.device.deviceId,
-        sessionId: S.session,
-        recipient: "device",
-        kind: "bye"
-      };
-      api("send_signal", signal).catch(() => {});
     }
+    api("send_signal", {
+      controllerToken: S.device.controllerToken,
+      deviceId: S.device.deviceId,
+      sessionId: S.session,
+      recipient: "device",
+      kind: "bye"
+    }).catch(error => console.debug("Session-scoped bye signal could not be sent", error));
   }
   const old = S.pc;
   S.pc = null;
@@ -1508,7 +1602,7 @@ async function unpairSelectedDevice() {
     await disconnect(false);
     S.devices = S.devices.filter(device => device.deviceId !== selected.deviceId);
     saveDevices();
-    localStorage.removeItem(SELECTED_KEY);
+    storageRemove(SELECTED_KEY);
     S.device = null;
     refreshDeviceList();
     status("このブラウザーの登録解除済み");
@@ -1712,10 +1806,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("history").addEventListener("click", () => loadHistory().catch(error => toast(error.message)));
   $("deleteHistory").addEventListener("click", () => deleteHistory().catch(error => toast(error.message)));
   S.motionEvents = readMotionEvents();
-  $("motionEnabled").checked = localStorage.getItem("rc_motion_enabled_v42") === "1";
+  $("motionEnabled").checked = storageGet("rc_motion_enabled_v42", "0") === "1";
   $("motionEnabled").addEventListener("change", event => {
     const enabled = event.target.checked;
-    try { localStorage.setItem("rc_motion_enabled_v42", enabled ? "1" : "0"); } catch (_) {}
+    storageSet("rc_motion_enabled_v42", enabled ? "1" : "0");
     if (enabled) {
       if (S.pc) startMotionDetection();
       else $("motionState").textContent = "接続後に解析を開始します";
@@ -1726,6 +1820,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("motionNotifications").addEventListener("click", requestMotionNotifications);
   $("motionEvents").addEventListener("click", showMotionEvents);
   $("exportMotionEvents").addEventListener("click", exportMotionEvents);
+  $("imageViewerDownload").addEventListener("click", saveImageViewer);
+  $("imageViewerFullscreen").addEventListener("click", () => toggleImageFullscreen());
+  $("imageViewerClose").addEventListener("click", () => {
+    if ($("imageViewerDialog").open) $("imageViewerDialog").close();
+  });
+  $("imageViewerDialog").addEventListener("close", () => {
+    if (document.fullscreenElement === $("imageViewerDialog") && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+    releaseImageViewerSource();
+  });
   $("videoTab").addEventListener("click", showVideo);
   $("mapTab").addEventListener("click", showMap);
   $("fullscreen").addEventListener("click", toggleFullscreen);
@@ -1751,11 +1856,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
   $("copyLocation").addEventListener("click", copyCoordinates);
-  const storedVolume = localStorage.getItem("rc_receive_volume_v1");
+  const storedVolume = storageGet("rc_receive_volume_v1", null);
   const savedVolume = storedVolume === null ? 70 : Number(storedVolume);
   setReceiveVolume(Number.isFinite(savedVolume) ? savedVolume : 70, false);
   $("volume").addEventListener("input", event => setReceiveVolume(Number(event.target.value), true));
-  const storedAndroidSpeakerVolume = localStorage.getItem("rc_android_speaker_volume_v1");
+  const storedAndroidSpeakerVolume = storageGet("rc_android_speaker_volume_v1", null);
   const savedAndroidSpeakerVolume = storedAndroidSpeakerVolume === null ? 70 : Number(storedAndroidSpeakerVolume);
   S.androidSpeakerVolume = Number.isFinite(savedAndroidSpeakerVolume)
     ? Math.max(0, Math.min(100, savedAndroidSpeakerVolume)) : 70;
