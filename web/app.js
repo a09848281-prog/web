@@ -1579,21 +1579,24 @@ async function unpairSelectedDevice() {
   $("unpair").disabled = true;
   try {
     if (S.pc && S.session) {
+      // Use both transports before revoking this viewer token. A failed direct
+      // data-channel send must not strand its Android peer until ICE timeout.
       if (S.controlChannel && S.controlChannel.readyState === "open") {
         try {
           S.controlChannel.send(JSON.stringify({
-            type: "command", name: "disconnect", payload: {}, sentAt: Date.now()
+            type: "command", name: "disconnect", payload: {}, sessionId: S.session, sentAt: Date.now()
           }));
-        } catch (_) {}
-      } else {
-        await api("send_signal", {
-          controllerToken: selected.controllerToken,
-          deviceId: selected.deviceId,
-          sessionId: S.session,
-          recipient: "device",
-          kind: "bye"
-        }).catch(() => {});
+        } catch (error) {
+          console.debug("Direct viewer unpair disconnect could not be queued", error);
+        }
       }
+      await api("send_signal", {
+        controllerToken: selected.controllerToken,
+        deviceId: selected.deviceId,
+        sessionId: S.session,
+        recipient: "device",
+        kind: "bye"
+      }).catch(error => console.debug("Session-scoped unpair bye could not be sent", error));
     }
     await api("unpair_device", {
       controllerToken: selected.controllerToken,
