@@ -5,8 +5,8 @@
 - Android applicationId: `jp.a09848281.remotecamera.v451preview`
 - versionCode: 451 / versionName: 4.5.1
 - Web / GAS API version: 4.5.1
-- Artifact: `remote-camera-debug-apk-v4.5.1` (ID `14529953480`; expires 2026-12-19 12:42 UTC)
-- Validation run: [44526203866 — success](https://github.com/a09848281-prog/web/actions/runs/44526203866)
+- Artifact: `remote-camera-debug-apk-v4.5.1` (ID `14533225223`; expires 2026-12-19 12:46 UTC)
+- Validation run: [44526944518 — success](https://github.com/a09848281-prog/web/actions/runs/44526944518)
 - Pages deploy: [44526102120 — success](https://github.com/a09848281-prog/web/actions/runs/44526102120)
 - Preview URL: https://a09848281-prog.github.io/web/v4.5.1-preview/
 
