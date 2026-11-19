@@ -653,7 +653,7 @@ function getControllers_(r) {
       controllerName: String(v[2] || "Web閲覧端末"),
       createdAt: iso_(v[4]),
       lastSeen: iso_(v[5]),
-      online: v[5] ? (Date.now() - new Date(v[5]).getTime() <= 90000) : false,
+      online: v[5] ? (Date.now() - new Date(v[5]).getTime() <= 180000) : false,
       current: String(v[0]) === current.controllerId
     };
   });
