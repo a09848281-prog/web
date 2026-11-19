@@ -1187,7 +1187,7 @@ function startViewerHeartbeat() {
     }).catch(error => console.debug("Viewer heartbeat failed", error));
   };
   ping();
-  S.viewerHeartbeatTimer = setInterval(ping, 30000);
+  S.viewerHeartbeatTimer = setInterval(ping, 60000);
 }
 function stopViewerHeartbeat() {
   if (S.viewerHeartbeatTimer) clearInterval(S.viewerHeartbeatTimer);
