@@ -417,7 +417,7 @@ function refreshDeviceCode_(r) {
 
 function claimDevice_(r) {
   const code = String(r.code || "").trim();
-  if (!/^\\d{8}$/.test(code)) throw Error("登録コードは8桁の数字です。");
+  if (!/^\d{8}$/.test(code)) throw Error("登録コードは8桁の数字です。");
   const controllerName = String(r.controllerName || r.deviceName || "Web閲覧端末")
     .trim().slice(0, 40) || "Web閲覧端末";
   const lock = LockService.getScriptLock();
