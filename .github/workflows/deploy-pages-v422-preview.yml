@@ -1,6 +1,12 @@
 name: Deploy Remote Camera v4.2.2 Side-by-side Preview
 
 on:
+  push:
+    branches:
+      - rebuild-v4.2.2-ultra-stable-controls
+    paths:
+      - "web/**"
+      - ".github/workflows/deploy-pages-v422-preview.yml"
   workflow_dispatch:
 
 permissions:
