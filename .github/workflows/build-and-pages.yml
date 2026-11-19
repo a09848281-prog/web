@@ -329,10 +329,18 @@ jobs:
               !app.includes('function toggleImageFullscreen') ||
               !app.includes('ICE候補の収集が25秒以内に完了') ||
               !app.includes('session-scoped GAS bye') ||
+              !app.includes('function storageGet(') ||
+              !app.includes('function storageSet(') ||
+              !app.includes('function storageRemove(') ||
+              !app.includes('storageSet(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents))') ||
+              !app.includes('function formatDuration(') ||
+              app.includes('async function formatDuration') ||
+              !app.includes('URL.revokeObjectURL') ||
+              !app.includes('Use both transports before revoking this viewer token') ||
               app.includes('async function formatDuration')) {
-            throw new Error('v4.2 received-image viewer or connection stability guard is missing.');
+            throw new Error('v4.2 received-image viewer, local storage fallback or connection stability guard is missing.');
           }
-          console.log('v4.2 multi-viewer, motion detection, received-image fullscreen, connection safeguards and version checks passed.');
+          console.log('v4.2 multi-viewer, motion detection, received-image fullscreen, storage fallback, session cleanup and version checks passed.');
           NODE
       - name: Build Android debug APK
         working-directory: android
