@@ -33,7 +33,7 @@ class RtcEngine(
     private val audioPickupMode: String,
     private val scope: CoroutineScope,
     private val onState: (String) -> Unit,
-    private val onControlCommand: (JSONObject) -> Unit = {}
+    private val onControlCommand: (String, JSONObject) -> Unit = {}
 ) {
     private val peers = ConcurrentHashMap<String, PeerConnection>()
     private val videoSenders = ConcurrentHashMap<String, RtpSender>()
