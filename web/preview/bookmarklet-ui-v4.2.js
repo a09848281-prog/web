@@ -2,7 +2,7 @@
   "use strict";
 
   const ROOT_ID = "__remote_camera_v42_bookmarklet__";
-  const APP_URL = "https://cdn.jsdelivr.net/gh/a09848281-prog/web@rebuild-v4.2-multi-viewer-camera/web/index.html";
+  const APP_URL = "https://cdn.jsdelivr.net/gh/a09848281-prog/web@rebuild-v4.2-multi-viewer-camera/web/index.html?embed=bookmarklet&v=4.2.0";
   const existing = document.getElementById(ROOT_ID);
 
   if (existing) {
@@ -30,6 +30,12 @@
     iframe{display:block;width:100%;height:100%;border:0;background:#eef2f7}
     .panel.min{height:48px!important;min-height:48px;width:min(420px,calc(100vw - 28px))}
     .panel.min .body{visibility:hidden;position:absolute;inset:48px 0 0;pointer-events:none}
+    .panel.image-fullscreen{
+      inset:0!important;left:0!important;top:0!important;right:0!important;bottom:0!important;
+      width:100vw!important;height:100vh!important;height:100dvh!important;
+      min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;
+      border:0!important;border-radius:0!important
+    }
     .tip{position:absolute;left:10px;bottom:10px;z-index:2;background:#101827dd;color:#fff;border-radius:8px;padding:6px 9px;font-size:11px;pointer-events:none}
     @media(max-width:640px){.panel{inset:0;width:100vw;height:100dvh;min-width:0;min-height:0;border-radius:0;border:0}.panel.min{inset:auto 8px 8px 8px;width:auto;height:48px!important}.bar{height:48px;min-height:48px}.tip{display:none}}
   `;
@@ -55,18 +61,30 @@
   const frame = shadow.querySelector("iframe");
   frame.src = APP_URL;
 
+  const onFrameMessage = event => {
+    if (event.source !== frame.contentWindow) return;
+    if (!["https://cdn.jsdelivr.net", "https://a09848281-prog.github.io"].includes(event.origin)) return;
+    const data = event.data;
+    if (!data || data.channel !== "remote-camera-v42-bookmarklet") return;
+    if (data.action === "expand-image") panel.classList.add("image-fullscreen");
+    if (data.action === "restore-panel") panel.classList.remove("image-fullscreen");
+  };
+  window.addEventListener("message", onFrameMessage);
+
   shadow.querySelector('[data-action="open"]').addEventListener("click", () => {
     const tab = window.open(APP_URL, "_blank");
     if (!tab) alert("別タブを開けませんでした。ポップアップを許可するか、パネル内でご利用ください。");
   });
 
   shadow.querySelector('[data-action="min"]').addEventListener("click", event => {
+    if (panel.classList.contains("image-fullscreen")) return;
     const minimized = panel.classList.toggle("min");
     event.currentTarget.textContent = minimized ? "□" : "−";
     event.currentTarget.title = minimized ? "元に戻す" : "最小化";
   });
 
   shadow.querySelector('[data-action="close"]').addEventListener("click", () => {
+    window.removeEventListener("message", onFrameMessage);
     frame.src = "about:blank";
     host.remove();
   });
