@@ -1429,11 +1429,16 @@ function startMotionDetection() {
       $("motionState").textContent = changed.zoneName + " · 変化 " +
         (changed.ratio * 100).toFixed(1) + "%";
       const now = Date.now();
-      const last = Number(S.motionLastTriggeredByRegion[changed.zoneId]) || 0;
-      if (changed.ratio >= threshold && now - last >= 10000) {
-        S.motionLastTriggeredByRegion[changed.zoneId] = now;
+      // Record at most one zone per sample to avoid notification bursts.
+      // Pick the strongest zone that has crossed its own cooldown.
+      const triggered = results
+        .filter(result => result.ratio >= threshold &&
+          now - (Number(S.motionLastTriggeredByRegion[result.zoneId]) || 0) >= 10000)
+        .sort((a, b) => b.ratio - a.ratio)[0];
+      if (triggered) {
+        S.motionLastTriggeredByRegion[triggered.zoneId] = now;
         S.motionLastTriggered = now;
-        recordMotionEvent(changed.ratio, changed);
+        recordMotionEvent(triggered.ratio, triggered);
       }
     } catch (error) {
       $("motionState").textContent = "解析エラー";
