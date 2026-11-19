@@ -321,6 +321,14 @@ jobs:
               !bookmarklet.includes('image-fullscreen')) {
             throw new Error('Bookmarklet image view must expand the parent panel safely and restore it on close.');
           }
+          if (!app.includes('reason.includes("上限")') ||
+              !app.includes('scheduleReconnect(S.pc)') ||
+              !rtc.includes('private fun failSession(sessionId: String, reason: String)') ||
+              !rtc.includes('SDP Offer受信失敗') ||
+              !rtc.includes('PeerConnection.IceConnectionState.FAILED ->') ||
+              !rtc.includes('closeSession(sessionId)')) {
+            throw new Error('Session-local SDP error cleanup or max-viewer rejection handling is missing.');
+          }
           for (const id of ['imageViewerDialog','imageViewerImage','imageViewerTitle','imageViewerDownload','imageViewerFullscreen','imageViewerClose']) {
             if (!html.includes('id="' + id + '"')) throw new Error('Missing received-image viewer element: ' + id);
           }
