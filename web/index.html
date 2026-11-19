@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#101827">
-<title>Remote Camera</title>
+<title>Remote Camera v4.2</title>
 <link rel="stylesheet" href="./app.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-<script defer src="./app.js?v=3.9.0"></script>
+<script defer src="./app.js?v=4.2.0"></script>
 </head>
 <body>
 <header class="top">
@@ -21,8 +21,10 @@
       <div class="sideTitle"><h3>接続端末</h3><button id="refresh" type="button" aria-label="端末一覧を更新">↻</button></div>
       <div id="devices"><p class="muted">登録済み端末はありません。</p></div>
       <button id="pair" type="button" class="primary wide">＋ Androidをペアリング</button>
-      <button id="unpair" type="button" class="wide danger" disabled>選択中の端末をペアリング解除</button>
-      <p class="hint">Androidアプリに表示された8桁コードを入力します。ユーザー登録・ログインはありません。ペアリング情報はこのiPadのブラウザーに保存されます。</p>
+      <button id="unpair" type="button" class="wide danger" disabled>このブラウザーの閲覧登録を解除</button>
+      <button id="viewers" type="button" class="wide" disabled>登録済み閲覧端末を確認</button>
+      <p id="viewerCount" class="viewerCount">閲覧端末: --/3</p>
+      <p class="hint">Androidアプリで8桁コードを発行し、閲覧するiPad・PCごとに一度登録します。最大3台まで同時監視できます。閲覧権限は各ブラウザーに個別保存されます。</p>
     </section>
 
     <details class="settingsGroup" open>
@@ -112,6 +114,13 @@
       <span id="androidStatus" class="deviceStatus">Android情報：未取得</span>
     </div>
     <p id="connectionMetrics" class="metrics">通信状態：未接続</p>
+    <div class="motionTools">
+      <label class="motionToggle"><input id="motionEnabled" type="checkbox"> 動体検知</label>
+      <label>感度<select id="motionSensitivity"><option value="low">低</option><option value="normal" selected>標準</option><option value="high">高</option></select></label>
+      <button id="motionNotifications" type="button">通知を許可</button>
+      <button id="motionEvents" type="button">検知履歴</button>
+      <span id="motionState" aria-live="polite">動体検知 OFF</span>
+    </div>
     <p id="gasTiming" class="gasTiming">GAS処理 --</p>
     <div id="videoPane" class="videoPane">
       <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
@@ -126,7 +135,7 @@
       <div id="map"></div>
       <p id="locationInfo">位置情報はありません。</p>
     </div>
-    <p class="footer">録画・録音機能はありません。カメラ・マイクはAndroid側で待機を開始した後、接続時に使用します。</p>
+    <p class="footer">常時録画・録音は行いません。動体検知はこのブラウザー内で映像を解析し、検知時の小さな静止画と履歴をローカル保存します。タブがバックグラウンドで停止・休止すると検知も止まります。</p>
   </section>
 </main>
 <dialog id="pairDialog">
@@ -135,9 +144,18 @@
     <h2>Androidをペアリング</h2>
     <p>Androidアプリに表示された8桁コードを入力してください。コードは10分で期限切れになります。</p>
     <label>登録コード<input id="pairCode" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" autocomplete="one-time-code" required></label>
-    <label>端末名（任意）<input id="pairName" maxlength="40" placeholder="例：Androidカメラ"></label>
+    <label>この閲覧端末の名前<input id="pairName" maxlength="40" placeholder="例：iPad / リビングPC"></label>
     <button id="claim" type="button" class="primary wide">ペアリングする</button>
     <p id="pairMessage" aria-live="polite"></p>
+  </form>
+</dialog>
+<dialog id="viewersDialog">
+  <form method="dialog" class="dialog">
+    <button class="close" aria-label="閉じる">×</button>
+    <h2>登録済み閲覧端末</h2>
+    <p id="viewerSummary">最大3台まで登録できます。</p>
+    <div id="viewerRows"></div>
+    <button class="wide">閉じる</button>
   </form>
 </dialog>
 <dialog id="historyDialog">
@@ -145,6 +163,16 @@
     <button class="close" aria-label="閉じる">×</button>
     <h2>位置情報履歴</h2>
     <div id="historyRows"></div>
+    <button class="wide">閉じる</button>
+  </form>
+</dialog>
+<dialog id="motionDialog">
+  <form method="dialog" class="dialog">
+    <button class="close" aria-label="閉じる">×</button>
+    <h2>動体検知イベント</h2>
+    <p>検知した時刻・画面変化率・保存された静止画を表示します。履歴と画像はこのブラウザー内に保存されます。</p>
+    <div id="motionRows"></div>
+    <button id="exportMotionEvents" type="button" class="wide">CSVを書き出す</button>
     <button class="wide">閉じる</button>
   </form>
 </dialog>
