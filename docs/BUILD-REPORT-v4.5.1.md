@@ -17,7 +17,7 @@
 - PWA manifest, same-origin shell cache, local notifications while page processing is active.
 - White interface; left settings / right screen.
 - GAS API version marker updated with existing Sheets schema and actions unchanged.
-- Android package identity separated; media and RTC code inherited unchanged.
+- Android package identity separated; only its remote config URL points to the v4.5.1 preview branch; camera/RTC/media service logic is inherited unchanged.
 - No new external AI/API service, Firebase, SDK or package dependency.
 
 ## Validation

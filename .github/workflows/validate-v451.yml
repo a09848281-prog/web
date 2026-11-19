@@ -89,6 +89,8 @@ jobs:
           assert(/applicationId\s*=\s*"jp\.a09848281\.remotecamera\.v451preview"/.test(gradle),'APK must be side-by-side installable');
           assert(/versionCode\s*=\s*451/.test(gradle)&&/versionName\s*=\s*"4.5.1"/.test(gradle)&&config.appVersion==='4.5.1','Android/Web version alignment failed');
           assert(androidManifest.includes('Remote Camera 4.5.1 Preview'),'Android label mismatch');
+          const androidConfig = fs.readFileSync('android/app/src/main/java/jp/a09848281/remotecamera/Config.kt','utf8');
+          assert(androidConfig.includes('raw.githubusercontent.com/a09848281-prog/web/rebuild-v4.5.1-smart-motion-pwa/web/config.json'),'Preview APK must load the matching preview config');
           assert(!/firebase|tensorflow|mediapipe/i.test(gradle+app),'No Firebase or new ML SDK dependency allowed');
           console.log('Remote Camera v4.5.1 source integration checks passed.');
           NODE

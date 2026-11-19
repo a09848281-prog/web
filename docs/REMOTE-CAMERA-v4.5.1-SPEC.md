@@ -35,7 +35,7 @@ v4.3：リポジトリ内に既存ブランチ・仕様書・ビルド記録を�
 - 白背景と薄い青・灰色のアクセント。黒いパネル・黒背景を使わない。
 
 ## 互換性
-- Android撮影・WebRTC APIアクションは変更しない。Android APKのapplicationIdは `jp.a09848281.remotecamera.v451preview`、versionCode 451、versionName 4.5.1。
+- Android撮影・WebRTC処理は変更しない。新APKのリモート設定取得先のみv4.5.1ブランチの `web/config.json` へ切り替え、プレビュー用GAS URLと一致させる。Android APKのapplicationIdは `jp.a09848281.remotecamera.v451preview`、versionCode 451、versionName 4.5.1。
 - GASはバージョン表記のみ4.5.1へ更新。シート名・列・既存データ・認証方式は維持。
 - WebのペアリングLocalStorageキーはv4.2を維持。旧検知履歴キーを読み込み、新キーへ保存。
 - 旧APKと並行インストール可能。新APKでは新しいペアリングが必要。
