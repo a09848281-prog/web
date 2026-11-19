@@ -79,7 +79,7 @@ jobs:
           assert(gas.includes('const version = "4.2.2"') && gas.includes('fpsLimit: clamp_(s.fpsLimit, 15, 60, 24)'), 'GAS version and 60fps range must match');
           assert(rtc.includes('fpsLimit.coerceIn(15, 60)') && rtc.includes('profile.fps, minOf(profile.fps, 30), 24, 20, 15'), 'Android must try requested FPS and lower fallbacks');
           assert(rtc.includes('monitorMetricsProvider') && service.includes('TrafficStats.getUidRxBytes'), 'Android uptime and per-app traffic estimate are required');
-          assert(rtc.includes('CameraAccessException.TORCH_IN_USE') && rtc.includes('isFlashlightOn()'), 'Torch retry and confirmed state are required');
+          assert(rtc.includes('CameraAccessException.CAMERA_IN_USE') && rtc.includes('CameraAccessException.MAX_CAMERAS_IN_USE') && rtc.includes('isFlashlightOn()'), 'Torch retry and confirmed state are required');
           assert(service.includes('withTimeoutOrNull(4500L)') && service.includes('freshAfterCache'), 'Fast location cache and bounded refresh are required');
           assert(/versionCode\s*=\s*422/.test(gradle) && /versionName\s*=\s*"4.2.2"/.test(gradle) && config.appVersion === '4.2.2', 'Version alignment failed');
           assert(!/firebase/i.test(gradle), 'Firebase must remain excluded');
