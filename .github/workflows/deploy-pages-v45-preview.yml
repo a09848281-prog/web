@@ -1,0 +1,88 @@
+name: Deploy Remote Camera v4.5 Preview Side-by-side
+
+on:
+  push:
+    branches:
+      - rebuild-v4.5-motion-zones-white-ui
+    paths:
+      - "web/**"
+      - ".github/workflows/deploy-pages-v45-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages-v45-preview
+      url: ${{ steps.deployment.outputs.page_url }}v4.5-preview/
+    steps:
+      - name: Checkout published v4.2 website source
+        uses: actions/checkout@v4
+        with:
+          ref: rebuild-v4.2-multi-viewer-camera
+          path: base-v42
+
+      - name: Checkout v4.2.2 preview source
+        uses: actions/checkout@v4
+        with:
+          ref: rebuild-v4.2.2-ultra-stable-controls
+          path: v422
+
+      - name: Checkout v4.5 preview source
+        uses: actions/checkout@v4
+        with:
+          ref: rebuild-v4.5-motion-zones-white-ui
+          path: v45
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+          with:
+            enablement: true
+
+      - name: Build side-by-side Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s base-v42/web/index.html
+          test -s base-v42/web/app.js
+          test -s v422/web/index.html
+          test -s v422/web/app.js
+          test -s v45/web/index.html
+          test -s v45/web/app.js
+          test -s v45/web/motion-regions.js
+          test -s v45/web/sw.js
+          test -s v45/web/manifest.webmanifest
+          node --check base-v42/web/app.js
+          node --check v422/web/app.js
+          node --check v45/web/app.js
+          node --check v45/web/motion-regions.js
+          node -e 'const old=require("./base-v42/web/config.json"); if(old.appVersion!=="4.2.0") throw new Error("Published root must remain v4.2.0");'
+          node -e 'const preview=require("./v422/web/config.json"); if(preview.appVersion!=="4.2.2") throw new Error("Existing v4.2.2 preview must remain unchanged");'
+          node -e 'const next=require("./v45/web/config.json"); if(next.appVersion!=="4.5.0" || !next.gasUrl.endsWith("/exec")) throw new Error("v4.5 config is invalid");'
+          mkdir -p _site/v4.2.2-preview _site/v4.5-preview
+          cp -a base-v42/web/. _site/
+          cp -a v422/web/. _site/v4.2.2-preview/
+          cp -a v45/web/. _site/v4.5-preview/
+          test -s _site/index.html
+          test -s _site/v4.2.2-preview/index.html
+          test -s _site/v4.5-preview/index.html
+          echo "Root v4.2, v4.2.2 preview and v4.5 preview are deployed side-by-side."
+
+      - name: Upload combined Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy versions without overwriting existing folders
+        id: deployment
+        uses: actions/deploy-pages@v4
