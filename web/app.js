@@ -1,8 +1,8 @@
 "use strict";
 
 const $ = id => document.getElementById(id);
-const STORAGE_KEY = "rc_paired_devices_v1";
-const SELECTED_KEY = "rc_selected_device_v1";
+const STORAGE_KEY = "rc_paired_devices_v42";
+const SELECTED_KEY = "rc_selected_device_v42";
 const S = {
   cfg: null,
   devices: [],
@@ -59,7 +59,11 @@ const S = {
   lastGasServerMs: null,
   lastGasApiVersion: "",
   sessionTimer: null,
-  connectedAt: 0
+  connectedAt: 0,
+  motionTimer: null,
+  motionPrevious: null,
+  motionLastTriggered: 0,
+  motionEvents: []
 };
 
 function rid() {
@@ -127,7 +131,7 @@ function apiOnce(action, data = {}) {
     const input = document.createElement("input");
     input.type = "hidden";
     input.name = "payload";
-    input.value = JSON.stringify({ action, requestId: id, ...data });
+    input.value = JSON.stringify({ action, requestId: id, clientOrigin: location.origin, ...data });
     form.appendChild(input);
     document.body.append(frame, form);
 
@@ -217,7 +221,7 @@ function renderDevices() {
     const strong = document.createElement("b");
     const small = document.createElement("small");
     strong.textContent = device.deviceName || "Android端末";
-    small.textContent = "端末ID: " + device.deviceId.slice(0, 12);
+    small.textContent = "端末ID: " + device.deviceId.slice(0, 12) + (device.controllerName ? " · " + device.controllerName : "");
     button.append(strong, small);
     button.addEventListener("click", () => selectDevice(device));
     box.appendChild(button);
@@ -246,7 +250,7 @@ function selectDevice(device) {
   S.device = device;
   localStorage.setItem(SELECTED_KEY, device.deviceId);
   $("deviceName").textContent = device.deviceName || "Android端末";
-  $("deviceMeta").textContent = "端末ID: " + device.deviceId + " / このiPadにペアリング済み";
+  $("deviceMeta").textContent = "端末ID: " + device.deviceId + " / 閲覧名: " + (device.controllerName || "このブラウザー");
   renderDevices();
   setControlsEnabled(true);
   status("ペアリング済み");
@@ -272,18 +276,20 @@ function refreshDeviceList() {
 }
 async function claimDevice() {
   const code = $("pairCode").value.trim();
-  const deviceName = $("pairName").value.trim();
-  if (!/^\d{8}$/.test(code)) {
+  const controllerName = $("pairName").value.trim() || "Web閲覧端末";
+  if (!/^\\d{8}$/.test(code)) {
     message("pairMessage", "8桁の登録コードを入力してください。");
     return;
   }
   $("claim").disabled = true;
-  message("pairMessage", "Android端末を確認しています…", true);
+  message("pairMessage", "Android端末と登録枠を確認しています…", true);
   try {
-    const result = await api("claim_device", { code, deviceName });
+    const result = await api("claim_device", { code, controllerName });
     const device = {
       deviceId: result.deviceId,
-      deviceName: result.deviceName || deviceName || "Android端末",
+      deviceName: result.deviceName || "Android端末",
+      controllerId: result.controllerId || "",
+      controllerName: result.controllerName || controllerName,
       controllerToken: result.controllerToken
     };
     S.devices = readDevices().filter(x => x.deviceId !== device.deviceId);
@@ -294,7 +300,8 @@ async function claimDevice() {
     $("pairDialog").close();
     refreshDeviceList();
     selectDevice(device);
-    toast("Androidをペアリングしました。");
+    $("viewerCount").textContent = "閲覧端末: " + (result.viewerCount || 1) + "/" + (result.maxViewers || 3);
+    toast("このブラウザーを閲覧端末として登録しました。");
   } catch (error) {
     message("pairMessage", error.message);
   } finally {
@@ -840,6 +847,152 @@ function startVideoWatchdog(pc) {
   }, 2000);
 }
 
+const MOTION_STORAGE_KEY = "rc_motion_events_v42";
+function readMotionEvents() {
+  try {
+    const value = JSON.parse(localStorage.getItem(MOTION_STORAGE_KEY) || "[]");
+    return Array.isArray(value) ? value.slice(0, 12) : [];
+  } catch (_) { return []; }
+}
+function saveMotionEvents() {
+  try { localStorage.setItem(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents.slice(0, 12))); }
+  catch (_) {
+    S.motionEvents = S.motionEvents.slice(0, 12).map(event => ({ ...event, image: "" }));
+    try { localStorage.setItem(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents)); } catch (_) {}
+  }
+}
+function stopMotionDetection(keepEnabled = true) {
+  if (S.motionTimer) clearInterval(S.motionTimer);
+  S.motionTimer = null;
+  S.motionPrevious = null;
+  if (!keepEnabled) $("motionState").textContent = "動体検知 OFF";
+}
+function startMotionDetection() {
+  if (S.motionTimer || !S.pc) return;
+  $("motionState").textContent = "映像を解析中…";
+  const canvas = document.createElement("canvas");
+  canvas.width = 160;
+  canvas.height = 90;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    $("motionState").textContent = "このブラウザーは画像解析に対応していません";
+    return;
+  }
+  S.motionTimer = setInterval(() => {
+    const video = $("remoteVideo");
+    if (!S.pc || document.hidden || video.readyState < 2 || !video.videoWidth) return;
+    try {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      if (!S.motionPrevious) {
+        S.motionPrevious = new Uint8ClampedArray(pixels);
+        return;
+      }
+      let changed = 0;
+      const count = pixels.length / 4;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const diff = Math.abs(pixels[i] - S.motionPrevious[i]) +
+          Math.abs(pixels[i + 1] - S.motionPrevious[i + 1]) +
+          Math.abs(pixels[i + 2] - S.motionPrevious[i + 2]);
+        if (diff > 54) changed++;
+      }
+      S.motionPrevious = new Uint8ClampedArray(pixels);
+      const ratio = changed / count;
+      const threshold = ({ low: 0.16, normal: 0.09, high: 0.045 })[$("motionSensitivity").value] || 0.09;
+      $("motionState").textContent = "解析中 · 変化 " + (ratio * 100).toFixed(1) + "%";
+      if (ratio >= threshold && Date.now() - S.motionLastTriggered >= 10000) {
+        recordMotionEvent(ratio);
+      }
+    } catch (error) {
+      $("motionState").textContent = "解析エラー";
+      console.debug("Motion analysis", error);
+    }
+  }, 700);
+}
+function recordMotionEvent(ratio) {
+  S.motionLastTriggered = Date.now();
+  const event = {
+    timestamp: new Date().toISOString(),
+    ratio: ratio,
+    sensitivity: $("motionSensitivity").value,
+    image: ""
+  };
+  try {
+    const video = $("remoteVideo");
+    if (video.videoWidth && video.videoHeight) {
+      const image = document.createElement("canvas");
+      const scale = Math.min(1, 320 / video.videoWidth);
+      image.width = Math.max(1, Math.round(video.videoWidth * scale));
+      image.height = Math.max(1, Math.round(video.videoHeight * scale));
+      const ctx = image.getContext("2d");
+      ctx.drawImage(video, 0, 0, image.width, image.height);
+      event.image = image.toDataURL("image/jpeg", 0.55);
+    }
+  } catch (error) {
+    console.debug("Motion snapshot skipped", error);
+  }
+  S.motionEvents.unshift(event);
+  S.motionEvents = S.motionEvents.slice(0, 12);
+  saveMotionEvents();
+  $("motionState").textContent = "⚠ 動きを検知 " + new Date(event.timestamp).toLocaleTimeString();
+  if ("Notification" in window && Notification.permission === "granted") {
+    try { new Notification("Remote Camera：動体を検知", { body: new Date(event.timestamp).toLocaleString() }); } catch (_) {}
+  }
+  toast("動体を検知しました。イベント履歴に保存しました。");
+}
+async function requestMotionNotifications() {
+  if (!("Notification" in window)) return toast("このブラウザーは通知に対応していません。");
+  try {
+    const permission = await Notification.requestPermission();
+    toast(permission === "granted" ? "動体検知の通知を許可しました。" : "通知は許可されませんでした。");
+  } catch (_) { toast("通知許可を取得できませんでした。"); }
+}
+function renderMotionEvents() {
+  const host = $("motionRows");
+  host.replaceChildren();
+  if (!S.motionEvents.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "検知イベントはありません。";
+    host.appendChild(empty);
+    return;
+  }
+  for (const event of S.motionEvents) {
+    const row = document.createElement("div");
+    row.className = "motionrow";
+    const detail = document.createElement("span");
+    detail.textContent = new Date(event.timestamp).toLocaleString() +
+      " · 画面変化 " + (Number(event.ratio) * 100).toFixed(1) + "%";
+    row.appendChild(detail);
+    if (event.image) {
+      const link = document.createElement("a");
+      link.href = event.image;
+      link.download = "remote-camera-motion-" + event.timestamp.replace(/[:.]/g, "-") + ".jpg";
+      link.textContent = "静止画を保存";
+      row.appendChild(link);
+    }
+    host.appendChild(row);
+  }
+}
+function showMotionEvents() {
+  renderMotionEvents();
+  $("motionDialog").showModal();
+}
+function exportMotionEvents() {
+  const rows = [["timestamp","change_ratio","sensitivity"]];
+  S.motionEvents.forEach(event => rows.push([
+    event.timestamp, Number(event.ratio).toFixed(4), event.sensitivity
+  ]));
+  const csv = "\uFEFF" + rows.map(row => row.map(value =>
+    '"' + String(value).replace(/"/g, '""') + '"'
+  ).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "remote-camera-motion-events.csv";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 async function connect(automatic = false) {
   // A direct click handler receives a PointerEvent; only the literal true
   // value is used for an automatic retry.
@@ -942,6 +1095,7 @@ async function connect(automatic = false) {
         $("snapshot").disabled = false;
         startVideoWatchdog(pc);
         restoreRemotePlayback();
+        if ($("motionEnabled").checked) startMotionDetection();
       } else if (track.kind === "audio") {
         if (!S.remoteAudioTracks.some(existing => existing.id === track.id)) {
           track.enabled = !S.pttActive && !S.remoteAudioMuted;
@@ -979,6 +1133,7 @@ async function connect(automatic = false) {
         startSessionClock();
         startStatsMonitor(pc);
         startVideoWatchdog(pc);
+        if ($("motionEnabled").checked) startMotionDetection();
       } else if (state === "failed" || state === "disconnected" || state === "closed") {
         if (state === "disconnected") $("streamState").textContent = "通信が不安定です・復帰確認中";
         if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
@@ -1068,6 +1223,7 @@ async function disconnect(sendCommand = true, preserveMic = false) {
   }
   stopStatsMonitor();
   stopVideoWatchdog();
+  stopMotionDetection(true);
   stopSessionClock();
   if (S.reconnectResetTimer) clearTimeout(S.reconnectResetTimer);
   S.reconnectResetTimer = null;
@@ -1096,12 +1252,6 @@ async function disconnect(sendCommand = true, preserveMic = false) {
         kind: "bye"
       };
       api("send_signal", signal).catch(() => {});
-      api("send_command", {
-        controllerToken: S.device.controllerToken,
-        deviceId: S.device.deviceId,
-        command: "disconnect",
-        payload: {}
-      }).catch(() => {});
     }
   }
   const old = S.pc;
@@ -1305,18 +1455,29 @@ async function command(name, payload = {}) {
 
 async function unpairSelectedDevice() {
   if (!S.device) return;
-  if (!confirm("このAndroid端末とiPadのペアリングを解除します。Android側の監視映像・音声も次回通信時に停止します。よろしいですか？")) return;
+  if (!confirm("このブラウザーの閲覧権限だけを解除します。他のiPad・PCの監視接続には影響しません。よろしいですか？")) return;
   const selected = S.device;
   S.manualDisconnect = true;
   if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
   S.reconnectTimer = null;
   $("unpair").disabled = true;
   try {
-    // Close the camera session over WebRTC before removing the pairing token.
-    if (S.pc && S.controlChannel && S.controlChannel.readyState === "open") {
-      S.controlChannel.send(JSON.stringify({
-        type: "command", name: "disconnect", payload: {}, sentAt: Date.now()
-      }));
+    if (S.pc && S.session) {
+      if (S.controlChannel && S.controlChannel.readyState === "open") {
+        try {
+          S.controlChannel.send(JSON.stringify({
+            type: "command", name: "disconnect", payload: {}, sentAt: Date.now()
+          }));
+        } catch (_) {}
+      } else {
+        await api("send_signal", {
+          controllerToken: selected.controllerToken,
+          deviceId: selected.deviceId,
+          sessionId: S.session,
+          recipient: "device",
+          kind: "bye"
+        }).catch(() => {});
+      }
     }
     await api("unpair_device", {
       controllerToken: selected.controllerToken,
@@ -1328,12 +1489,37 @@ async function unpairSelectedDevice() {
     localStorage.removeItem(SELECTED_KEY);
     S.device = null;
     refreshDeviceList();
-    status("ペアリング解除済み");
-    toast("ペアリングを解除しました。");
+    status("このブラウザーの登録解除済み");
+    toast("このブラウザーの閲覧権限だけを解除しました。");
   } catch (error) {
-    toast("ペアリング解除失敗: " + error.message);
+    toast("登録解除失敗: " + error.message);
     $("unpair").disabled = false;
   }
+}
+
+async function loadViewerList() {
+  if (!S.device) return;
+  const result = await api("get_controllers", {
+    controllerToken: S.device.controllerToken,
+    deviceId: S.device.deviceId
+  });
+  const rows = $("viewerRows");
+  rows.replaceChildren();
+  for (const viewer of result.controllers || []) {
+    const row = document.createElement("div");
+    row.className = "viewerrow";
+    const name = document.createElement("b");
+    const detail = document.createElement("small");
+    name.textContent = viewer.controllerName + (viewer.current ? "（このブラウザー）" : "");
+    const last = viewer.lastSeen ? new Date(viewer.lastSeen).toLocaleString() : "履歴なし";
+    detail.textContent = (viewer.online ? "● オンライン確認済み" : "○ 最近の応答なし") + " · 最終確認 " + last;
+    row.append(name, detail);
+    rows.appendChild(row);
+  }
+  $("viewerCount").textContent = "閲覧端末: " + (result.viewerCount || 0) + "/" + (result.maxViewers || 3);
+  $("viewerSummary").textContent = "このAndroidには最大" + (result.maxViewers || 3) +
+    "台まで登録できます。登録コードはAndroid側で再発行してから、追加する端末で入力してください。";
+  $("viewersDialog").showModal();
 }
 
 async function loadHistory() {
@@ -1463,6 +1649,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("pair").addEventListener("click", () => $("pairDialog").showModal());
   $("pairQuick").addEventListener("click", () => $("pair").click());
   $("unpair").addEventListener("click", () => unpairSelectedDevice());
+  $("viewers").addEventListener("click", () => loadViewerList().catch(error => toast(error.message)));
   $("claim").addEventListener("click", claimDevice);
   $("connect").addEventListener("click", connect);
   $("disconnect").addEventListener("click", () => disconnect(true));
@@ -1502,6 +1689,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("locate").addEventListener("click", () => command("location_once").catch(error => toast(error.message)));
   $("history").addEventListener("click", () => loadHistory().catch(error => toast(error.message)));
   $("deleteHistory").addEventListener("click", () => deleteHistory().catch(error => toast(error.message)));
+  S.motionEvents = readMotionEvents();
+  $("motionEnabled").checked = localStorage.getItem("rc_motion_enabled_v42") === "1";
+  $("motionEnabled").addEventListener("change", event => {
+    const enabled = event.target.checked;
+    try { localStorage.setItem("rc_motion_enabled_v42", enabled ? "1" : "0"); } catch (_) {}
+    if (enabled) {
+      if (S.pc) startMotionDetection();
+      else $("motionState").textContent = "接続後に解析を開始します";
+    } else {
+      stopMotionDetection(false);
+    }
+  });
+  $("motionNotifications").addEventListener("click", requestMotionNotifications);
+  $("motionEvents").addEventListener("click", showMotionEvents);
+  $("exportMotionEvents").addEventListener("click", exportMotionEvents);
   $("videoTab").addEventListener("click", showVideo);
   $("mapTab").addEventListener("click", showMap);
   $("fullscreen").addEventListener("click", toggleFullscreen);
