@@ -1,0 +1,70 @@
+name: Validate Remote Camera v4.2 UI
+on:
+  push:
+    branches: [rebuild-v4.2-ui-layout-stability]
+    paths:
+      - "web/**"
+      - "gas/**"
+      - "android/**"
+      - ".github/workflows/validate-v42-ui.yml"
+  pull_request:
+    branches: [rebuild-v4.2-multi-viewer-camera]
+    paths:
+      - "web/**"
+      - "gas/**"
+      - "android/**"
+      - ".github/workflows/validate-v42-ui.yml"
+permissions:
+  contents: read
+concurrency:
+  group: v42-ui-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Check JavaScript syntax
+        run: |
+          node --check web/app.js
+          cp gas/Code.gs /tmp/gas-check.js
+          node --check /tmp/gas-check.js
+      - name: Check UI structure and control placement
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('web/index.html', 'utf8');
+          const app = fs.readFileSync('web/app.js', 'utf8');
+          const css = fs.readFileSync('web/app.css', 'utf8');
+          const ids = [...html.matchAll(/\\bid=["']([^"']+)["']/g)].map(x => x[1]);
+          const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+          if (dupes.length) throw Error('Duplicate IDs: ' + [...new Set(dupes)].join(', '));
+          const missing = [...new Set([...app.matchAll(/\\$\\(["']([^"']+)["']\\)/g)].map(x => x[1]).filter(id => !ids.includes(id)))];
+          if (missing.length) throw Error('Missing JS element IDs: ' + missing.join(', '));
+          const asideEnd = html.indexOf('</aside>');
+          const viewStart = html.indexOf('<section class="view"');
+          const left = html.slice(0, asideEnd);
+          const right = html.slice(viewStart);
+          for (const id of ['connect','disconnect','ptt','pttLock','remoteMute','fullscreen','fitMode','snapshot','flashlight','keepAwake','refreshStatus','viewerZoom','motionEnabled','motionSensitivity','motionNotifications','motionEvents','mapFollow','copyLocation']) {
+            if (!left.includes('id="' + id + '"')) throw Error('Control must stay in left panel: ' + id);
+          }
+          if (right.includes('id="connect"') || right.includes('class="viewerControls"') || right.includes('class="motionTools"')) throw Error('Right screen contains control UI.');
+          if (!right.includes('id="videoPane"') || !right.includes('id="remoteVideo"') || !right.includes('id="mapPane"')) throw Error('Right screen lost video/map output.');
+          if (!html.includes('id="imageViewerDialog"') || !html.includes('id="imageViewerImage"') || !css.includes('.imageViewerDialog[open]')) throw Error('Full-screen received image viewer missing.');
+          if (!app.includes('function openImageViewer') || !app.includes('function closeImageViewer')) throw Error('Image viewer handlers missing.');
+          console.log('v4.2 UI layout, unique IDs and image viewer checks passed.');
+          NODE
+      - name: Build Android v4.2 APK
+        run: gradle --no-daemon --stacktrace assembleDebug
+        working-directory: android
