@@ -438,16 +438,20 @@ class RtcEngine(
                                 if (previous != null) timer.cancel()
                             }
                         }
-                        PeerConnection.IceConnectionState.FAILED,
+                        PeerConnection.IceConnectionState.FAILED -> {
+                            disconnectTimers.remove(sessionId)?.cancel()
+                            onState("この閲覧端末のWebRTC接続に失敗しました。セッションを解放します")
+                            closeSession(sessionId)
+                        }
                         PeerConnection.IceConnectionState.CLOSED -> {
                             disconnectTimers.remove(sessionId)?.cancel()
-                            peers.remove(sessionId)
+                            val removed = peers.remove(sessionId) != null
                             videoSenders.remove(sessionId)
                             dataChannels.remove(sessionId)?.let {
                                 try { it.close() } catch (_: Exception) {}
                             }
                             iceStates.remove(sessionId)
-                            if (peers.isEmpty()) stopMedia()
+                            if (removed && peers.isEmpty()) stopMedia()
                         }
                         else -> Unit
                     }
@@ -514,19 +518,31 @@ videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
                         override fun onCreateSuccess(answer: SessionDescription) {
                             peer.setLocalDescription(object : SdpObserver {
                                 override fun onSetSuccess() { onState("接続応答を作成中…") }
-                                override fun onSetFailure(error: String) { onState("SDP設定失敗: $error") }
+                                override fun onSetFailure(error: String) {
+                                    failSession(sessionId, "SDPローカル設定失敗: $error")
+                                }
                                 override fun onCreateSuccess(desc: SessionDescription) {}
-                                override fun onCreateFailure(error: String) {}
+                                override fun onCreateFailure(error: String) {
+                                    failSession(sessionId, "SDPローカル作成失敗: $error")
+                                }
                             }, answer)
                         }
-                        override fun onCreateFailure(error: String) { onState("SDP応答作成失敗: $error") }
+                        override fun onCreateFailure(error: String) {
+                            failSession(sessionId, "SDP応答作成失敗: $error")
+                        }
                         override fun onSetSuccess() {}
-                        override fun onSetFailure(error: String) {}
+                        override fun onSetFailure(error: String) {
+                            failSession(sessionId, "SDP応答設定失敗: $error")
+                        }
                     }, MediaConstraints())
                 }
-                override fun onSetFailure(error: String) { onState("SDP受信失敗: $error") }
+                override fun onSetFailure(error: String) {
+                    failSession(sessionId, "SDP Offer受信失敗: $error")
+                }
                 override fun onCreateSuccess(desc: SessionDescription) {}
-                override fun onCreateFailure(error: String) {}
+                override fun onCreateFailure(error: String) {
+                    failSession(sessionId, "SDP Offer作成失敗: $error")
+                }
             }, SessionDescription(SessionDescription.Type.OFFER, sdp))
         } catch (e: Exception) {
             Log.e("RemoteCameraRTC", "Offer processing failed; cleaning partial RTC state", e)
@@ -543,6 +559,25 @@ videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
                         .put("sessionId", sessionId).put("recipient", "viewer")
                         .put("kind", "error").put("sdp", e.message ?: "RTC error"))
                 } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private fun failSession(sessionId: String, reason: String) {
+        Log.e("RemoteCameraRTC", "Releasing failed session " + sessionId + ": " + reason)
+        closeSession(sessionId)
+        onState("WebRTCセッション失敗： " + reason + "。他の閲覧端末の接続は維持します")
+        scope.launch(Dispatchers.IO) {
+            try {
+                api.call("send_signal", JSONObject()
+                    .put("deviceId", deviceId)
+                    .put("deviceSecret", secret)
+                    .put("sessionId", sessionId)
+                    .put("recipient", "viewer")
+                    .put("kind", "error")
+                    .put("sdp", reason))
+            } catch (error: Exception) {
+                Log.w("RemoteCameraRTC", "Could not notify viewer about failed session", error)
             }
         }
     }
