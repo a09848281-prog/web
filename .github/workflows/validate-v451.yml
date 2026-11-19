@@ -73,7 +73,7 @@ jobs:
           assert(app.includes('function handleMotionPointerDown')&&app.includes('function drawMotionOverlay'),'Drag drawing and overlay required');
           assert(app.includes('person-entry')&&app.includes('person-exit')&&app.includes('function movementDirection'),'Person candidate entry/exit/direction events required');
           assert(app.includes('MOTION_WIDTH = 160')&&app.includes('MAX_MOTION_ZONES = 8'),'Bounded local motion processing required');
-          assert(app.includes('S.motionZones.length === 1 && S.motionZones[0].id === \'full-screen\''),'First drawn zone must replace the default full-screen detector');
+          assert(/S\.motionZones\.length === 1 && S\.motionZones\[0\]\.id === \"full-screen\"/.test(app),'First drawn zone must replace the default full-screen detector');
           assert(app.includes('motionZoneEnabled')&&app.includes('zone.enabled ='),'Each zone must have an explicit enable/disable control');
           assert(app.includes('event.clientX - centerX')&&app.includes('rect.width / zoom'),'Drag mapping must account for viewer zoom');
           assert(app.includes('sourceAspect * (MOTION_WIDTH / MOTION_HEIGHT)'),'Person-candidate aspect estimate must account for portrait video');
