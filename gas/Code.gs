@@ -126,6 +126,7 @@ function dispatch_(r) {
     case "claim_device": return claimDevice_(r);
     case "unpair_device": return unpairDevice_(r);
     case "get_controllers": return getControllers_(r);
+    case "viewer_ping": return viewerPing_(r);
     case "device_poll": return devicePoll_(r);
     case "send_signal": return sendSignal_(r);
     case "poll_signals": return pollSignals_(r);
@@ -636,6 +637,15 @@ function clamp_(value, min, max, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.round(number))) : fallback;
 }
+function viewerPing_(r) {
+  const controller = authController_(r);
+  return {
+    ok: true,
+    controllerId: controller.controllerId,
+    serverTime: now_().toISOString()
+  };
+}
+
 function getControllers_(r) {
   const current = authController_(r);
   const controllers = activeControllerRows_(current.deviceId).map(function(v) {
