@@ -89,7 +89,7 @@ jobs:
           assert(app.includes('MAX_MOTION_REGIONS = 8') && app.includes('rc_motion_regions_v45'), 'Region limit and versioned local storage required');
           assert(app.includes('RemoteCameraMotion.measureRegions') && motion.includes('Math.abs(current[offset] - previous[offset])'), 'Pixel difference detection must be used, without a model');
           assert(app.includes('function notifyMotionEvent(event)') && app.includes('showNotification'), 'System notification path missing');
-          assert(app.includes('document.hidden') && app.includes('videoPane').toLowerCase(), 'Detection must not run on a hidden/non-video pane');
+          assert(app.includes('document.hidden') && app.includes('$(\"videoPane\").classList.contains(\"hidden\")'), 'Detection must not run on a hidden/non-video pane');
           assert(!/tensorflow|onnxruntime|mediapipe|tflite|coco-ssd|teachable.?machine/i.test(html + app + motion + gradle), 'AI/ML libraries must not be included');
 
           assert(config.appVersion === '4.5.0', 'Web config version must be 4.5.0');
