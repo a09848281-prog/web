@@ -1,7 +1,7 @@
 # Remote Camera v4.2.2 — クイックスタート
 
 ## APK
-GitHub Actionsで `Validate Remote Camera v4.2.2` が成功した実行を開き、Artifactsの `remote-camera-debug-apk-v4.2.2` をダウンロードする。ZIPを展開して `app-debug.apk` をAndroidへインストールし、カメラ・マイク・通知・必要に応じて位置情報の権限を許可する。
+GitHub Actionsで `Validate Remote Camera v4.2.2` が成功した実行を開き、Artifactsの `remote-camera-debug-apk-v4.2.2` をダウンロードする。ZIPを展開して `app-debug.apk` をAndroidへインストールし、カメラ・マイク・通知・必要に応じて位置情報の権限を許可する。v4.2.2は旧v4.2 Previewとは別アプリとして入るため、旧版をアンインストールする必要はない。新しいアプリを起動し、新しく表示されたペアリングコードをWebに入力する。
 
 ## GAS
 `docs/GAS-REDEPLOY-v4.2.2.md` に従い、`gas/Code.gs` を既存Apps Scriptへ貼り替えて新バージョンをデプロイする。既存スプレッドシートのデータは削除しない。
