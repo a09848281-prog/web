@@ -38,8 +38,8 @@
 
 ## CI確認記録（2026年11月19日）
 
-- 最新ソース検査・APKビルド：成功（[Actions run](https://github.com/a09848281-prog/web/actions/runs/44489831642)）
-- 最新v4.2 Pagesデプロイ：成功（[Actions run](https://github.com/a09848281-prog/web/actions/runs/44489823826)）
+- 最新ソース検査・APKビルド：成功（[Actions run](https://github.com/a09848281-prog/web/actions/runs/44490462920)）
+- 最新v4.2 Pagesデプロイ：成功（[Actions run](https://github.com/a09848281-prog/web/actions/runs/44490446343)）
 - 構文、HTML ID/API互換、v4.2整合、APK必須権限を自動検査済み。
 
 これはCI結果であり、Galaxy A22 5G / Android 13とiPad Safariの実機試験は未完了。
