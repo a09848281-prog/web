@@ -146,3 +146,62 @@
   .imageViewerHeader button{padding:6px 8px;font-size:11px;min-height:34px}
   .imageViewerStage{padding:4px 4px max(4px,env(safe-area-inset-bottom))}
 }
+
+
+/* v4.2.1: settings-left / screen-right control-room layout */
+.app{grid-template-columns:minmax(300px,350px) minmax(0,1fr);align-items:stretch;max-width:2200px;gap:14px}
+.side{position:sticky;top:76px;align-self:start;max-height:calc(100dvh - 92px);overflow:auto}
+.view{min-width:0;min-height:calc(100dvh - 92px);padding:12px;display:flex;flex-direction:column;background:#080f1c;border-color:#18263a;color:#e8eef8}
+.controlCard{padding:12px 4px 14px;border-bottom:1px solid #e5eaf1;margin-bottom:8px}
+.controlEyebrow{font-size:10px;letter-spacing:.16em;color:#7a8aa2;font-weight:800}
+.controlCard h2{font-size:17px;line-height:1.35;margin:7px 0;color:#1b2a40;overflow-wrap:anywhere}
+.controlCard>p{font-size:12px;color:#718097;margin:0 0 10px}
+.controlCard .monitorButtons{display:flex;gap:7px;margin:8px 0}
+.controlCard .monitorButtons button{flex:1}
+.controlCard .viewTabs{display:flex;gap:7px;margin:8px 0}
+.controlCard .viewTabs button{flex:1}
+.controlCard .pairQuick{margin-top:5px}
+.side .viewerControls{display:flex;flex-direction:column;align-items:stretch;gap:7px;margin:10px 0}
+.side .viewerControls>*{width:100%;max-width:100%;margin:0}
+.side .viewerControls .zoomControl{display:block}
+.side .viewerControls .zoomControl input{width:100%;margin-top:6px}
+.side .viewerControls .audioMeterLabel{display:flex;align-items:center;flex-wrap:wrap}
+.side .viewerControls .audioMeterLabel meter{flex:1}
+.side .viewerControls #ptt.pttProminent{min-width:0;flex:1 1 auto}
+.side .viewerControls .audioControlHint{line-height:1.45}
+.side .metrics{line-height:1.5;overflow-wrap:anywhere}
+.side .motionTools{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:10px 0}
+.side .motionTools>*{width:100%;max-width:100%}
+.side .motionTools label{display:flex;align-items:center}
+.side .motionTools select{flex:1}
+.side .gasTiming{font-size:11px;color:#75849a;overflow-wrap:anywhere}
+.sideMapTools{display:flex;gap:8px;align-items:center;margin:10px 0}
+.sideMapTools .check{display:flex;align-items:center;gap:6px;margin:0;flex:1;font-size:12px}
+.sideMapTools button{font-size:12px;min-height:34px;padding:6px 9px}
+.viewScreenHeader{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:3px 4px 10px;color:#a8b7cb;font-size:11px;letter-spacing:.08em}
+#screenConnectionState{color:#9eabc0;letter-spacing:0}
+.view .videoPane{flex:1 1 auto;min-height:0;height:calc(100dvh - 150px);margin:0;border-radius:10px;background:#02060c}
+.view .videoPane video{width:100%;height:100%;max-height:none;object-fit:contain}
+.view #mapPane{flex:1;min-height:0;display:flex;flex-direction:column}
+.view #map{height:100%;min-height:420px;flex:1;margin:0}
+.view #locationInfo{color:#aab7c9;font-size:12px}
+.view .videoPane footer{z-index:2}
+.view:has(#videoPane:fullscreen){padding:0}
+@media(max-width:900px){
+ .app{grid-template-columns:minmax(0,1fr);gap:9px}
+ .side{position:relative;top:auto;max-height:none;overflow:visible;order:0}
+ .view{order:1;min-height:62vh}
+ .view .videoPane{height:62vh;min-height:360px}
+ .view #map{min-height:420px}
+}
+@media(min-width:901px){
+ .app{min-height:calc(100dvh - 62px)}
+ .view{height:calc(100dvh - 92px)}
+ .view .videoPane{height:auto;min-height:0}
+}
+@media(max-width:560px){
+ .side{padding:11px}
+ .view{padding:8px}
+ .view .videoPane{height:56vh;min-height:300px}
+ .viewScreenHeader{padding:3px 2px 8px}
+}
