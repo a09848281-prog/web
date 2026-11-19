@@ -3,12 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#101827">
-<title>Remote Camera v4.2.2</title>
+<meta name="theme-color" content="#ffffff">
+<title>Remote Camera v4.5.1 Preview</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Remote Camera">
 <link rel="stylesheet" href="./app.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-<script defer src="./app.js?v=4.2.2"></script>
+<script defer src="./app.js?v=4.5.1"></script>
 </head>
 <body>
 <header class="top">
@@ -113,13 +118,37 @@
       <span id="sessionDuration">接続時間 00:00:00</span>
     </div>
     <p id="connectionMetrics" class="metrics">通信状態：未接続</p>
-    <div class="motionTools">
-      <label class="motionToggle"><input id="motionEnabled" type="checkbox"> 動体検知</label>
-      <label>感度<select id="motionSensitivity"><option value="low">低</option><option value="normal" selected>標準</option><option value="high">高</option></select></label>
-      <button id="motionNotifications" type="button">通知を許可</button>
-      <button id="motionEvents" type="button">検知履歴</button>
-      <span id="motionState" aria-live="polite">動体検知 OFF</span>
-    </div>
+    <details class="settingsGroup motionSettings" open>
+      <summary>🛡️ 動体・人物検知</summary>
+      <div class="settingsBody">
+        <label class="check"><input id="motionEnabled" type="checkbox"> 動体検知を有効にする</label>
+        <label>全体感度<select id="motionSensitivity"><option value="low">低</option><option value="normal" selected>標準</option><option value="high">高</option></select></label>
+        <div class="motionZoneActions">
+          <button id="addMotionZone" type="button" class="primary wide">映像上で検知範囲を追加</button>
+          <button id="cancelMotionZone" type="button" class="wide" disabled>範囲指定をキャンセル</button>
+        </div>
+        <p class="hint">映像上を指またはマウスでドラッグして四角形を作成します。最大8範囲。最初は全画面が登録されています。</p>
+        <div id="motionZoneList" class="motionZoneList" aria-live="polite"></div>
+        <label>選択中の範囲名<input id="motionZoneName" type="text" maxlength="24" placeholder="範囲名" disabled></label>
+        <label>選択範囲の感度<select id="motionZoneSensitivity" disabled><option value="low">低</option><option value="normal">標準</option><option value="high">高</option></select></label>
+        <div class="motionZoneActions">
+          <button id="saveMotionZone" type="button" class="wide" disabled>範囲設定を保存</button>
+          <button id="deleteMotionZone" type="button" class="wide danger" disabled>選択範囲を削除</button>
+        </div>
+        <hr>
+        <strong class="motionSubheading">人物に関する検知（端末内の簡易画像処理）</strong>
+        <label class="check"><input id="personCandidateEnabled" type="checkbox" checked> 人物らしい縦長の動きを候補として検出</label>
+        <label class="check"><input id="personEntryEnabled" type="checkbox" checked> 範囲への人物候補の進入を記録</label>
+        <label class="check"><input id="personExitEnabled" type="checkbox" checked> 範囲からの人物候補の退出を記録</label>
+        <p id="personState" class="hint" aria-live="polite">人物候補：未解析</p>
+        <p class="hint">本人特定はしません。縦横比と画面変化からの概算なので、荷物や影などを人物と誤判定する場合があります。</p>
+        <div class="motionZoneActions">
+          <button id="motionNotifications" type="button" class="wide">通知を許可</button>
+          <button id="motionEvents" type="button" class="wide">検知履歴</button>
+        </div>
+        <span id="motionState" aria-live="polite">動体検知 OFF</span>
+      </div>
+    </details>
     <p id="gasTiming" class="gasTiming">GAS処理 --</p>
     <div class="sideMapTools">
       <label class="check"><input id="mapFollow" type="checkbox" checked> 最新位置を追尾</label>
@@ -139,6 +168,8 @@
     </div>
     <div id="videoPane" class="videoPane">
       <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
+      <canvas id="motionOverlay" class="motionOverlay" aria-label="動体検知範囲の表示・指定"></canvas>
+      <div id="motionOverlayHint" class="motionOverlayHint hidden" role="status">映像上をドラッグして検知範囲を指定</div>
       <div id="placeholder"><b>映像はまだありません</b><small>Androidで監視待機を開始してから接続してください。</small></div>
       <footer><span id="streamState">待機中</span><span id="videoState">映像待機中</span><span id="audioState">Androidマイク待機中</span><span id="iceState">ICE: --</span></footer>
     </div>

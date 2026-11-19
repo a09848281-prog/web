@@ -78,6 +78,11 @@ const S = {
   motionPrevious: null,
   motionLastTriggered: 0,
   motionEvents: [],
+  motionZones: [],
+  motionSelectedZoneId: "",
+  motionDrawingEnabled: false,
+  motionDraft: null,
+  personZoneStates: {},
   viewerHeartbeatTimer: null,
   imageViewerSource: "",
   imageViewerFilename: "",
@@ -571,6 +576,7 @@ function updateViewerTransform() {
   video.style.transform = "scale(" + S.zoom + ")";
   video.style.objectFit = S.fitMode;
   $("zoomValue").textContent = Math.round(S.zoom * 100) + "%";
+  if (typeof updateMotionOverlayLayout === "function") updateMotionOverlayLayout();
 }
 
 async function toggleFullscreen() {
@@ -1097,176 +1103,507 @@ function startVideoWatchdog(pc) {
   }, 2000);
 }
 
-const MOTION_STORAGE_KEY = "rc_motion_events_v42";
+const MOTION_STORAGE_KEY = "rc_motion_events_v451";
+const LEGACY_MOTION_STORAGE_KEY = "rc_motion_events_v42";
+const MOTION_ZONES_KEY = "rc_motion_zones_v451";
+const MOTION_WIDTH = 160;
+const MOTION_HEIGHT = 90;
+const MAX_MOTION_ZONES = 8;
+const MAX_MOTION_EVENTS = 20;
+
+function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
+function safeMotionZone(zone, index) {
+  if (!zone || typeof zone !== "object") return null;
+  const x = clamp01(zone.x), y = clamp01(zone.y);
+  const w = Math.max(0, Math.min(1 - x, Number(zone.w) || 0));
+  const h = Math.max(0, Math.min(1 - y, Number(zone.h) || 0));
+  if (w < 0.015 || h < 0.015) return null;
+  return {
+    id: String(zone.id || ("zone-" + index)).slice(0, 48),
+    name: String(zone.name || ("範囲" + (index + 1))).replace(/[<>]/g, "").slice(0, 24),
+    x, y, w, h,
+    enabled: zone.enabled !== false,
+    sensitivity: ["low", "normal", "high"].includes(zone.sensitivity) ? zone.sensitivity : "normal"
+  };
+}
+function readMotionZones() {
+  const stored = storageGet(MOTION_ZONES_KEY, null);
+  if (stored === null) return [{
+    id: "full-screen", name: "全画面", x: 0, y: 0, w: 1, h: 1,
+    enabled: true, sensitivity: "normal"
+  }];
+  try {
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) throw new Error("invalid zone storage");
+    return parsed.slice(0, MAX_MOTION_ZONES).map(safeMotionZone).filter(Boolean);
+  } catch (_) {
+    return [{
+      id: "full-screen", name: "全画面", x: 0, y: 0, w: 1, h: 1,
+      enabled: true, sensitivity: "normal"
+    }];
+  }
+}
+function saveMotionZones() {
+  return storageSet(MOTION_ZONES_KEY, JSON.stringify(S.motionZones.slice(0, MAX_MOTION_ZONES)));
+}
 function readMotionEvents() {
   try {
-    const value = JSON.parse(storageGet(MOTION_STORAGE_KEY, "[]"));
+    const stored = storageGet(MOTION_STORAGE_KEY, null);
+    const value = JSON.parse(stored === null ? storageGet(LEGACY_MOTION_STORAGE_KEY, "[]") : stored);
     if (!Array.isArray(value)) return [];
-    return value.filter(event =>
-      event && typeof event.timestamp === "string" &&
-      Number.isFinite(Date.parse(event.timestamp)) &&
-      Number.isFinite(Number(event.ratio))
-    ).slice(0, 12).map(event => ({
-      ...event,
-      // Keep the event metadata even when an old or oversized image is invalid.
-      image: typeof event.image === "string" &&
-        event.image.startsWith("data:image/jpeg;base64,") &&
-        event.image.length <= 180000 ? event.image : ""
-    }));
+    return value.filter(event => event && typeof event.timestamp === "string" &&
+      Number.isFinite(Date.parse(event.timestamp)) && Number.isFinite(Number(event.ratio)))
+      .slice(0, MAX_MOTION_EVENTS).map(event => ({
+        ...event,
+        kind: typeof event.kind === "string" ? event.kind : "motion",
+        zoneName: typeof event.zoneName === "string" ? event.zoneName : "全画面",
+        personCount: Math.max(0, Number(event.personCount) || 0),
+        direction: typeof event.direction === "string" ? event.direction : "",
+        image: typeof event.image === "string" && event.image.startsWith("data:image/jpeg;base64,") &&
+          event.image.length <= 150000 ? event.image : ""
+      }));
   } catch (_) { return []; }
 }
 function saveMotionEvents() {
-  if (storageSet(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents.slice(0, 12)))) return;
-  S.motionEvents = S.motionEvents.slice(0, 12).map(event => ({ ...event, image: "" }));
+  if (storageSet(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents.slice(0, MAX_MOTION_EVENTS)))) return;
+  S.motionEvents = S.motionEvents.slice(0, MAX_MOTION_EVENTS).map(event => ({ ...event, image: "" }));
   storageSet(MOTION_STORAGE_KEY, JSON.stringify(S.motionEvents));
 }
-function stopMotionDetection(keepEnabled = true) {
-  if (S.motionTimer) clearInterval(S.motionTimer);
-  S.motionTimer = null;
-  S.motionPrevious = null;
-  $("motionState").textContent = keepEnabled && $("motionEnabled").checked
-    ? "接続待ち・映像受信時に再開" : "動体検知 OFF";
+function selectedMotionZone() {
+  return S.motionZones.find(zone => zone.id === S.motionSelectedZoneId) || null;
 }
-function startMotionDetection() {
-  if (S.motionTimer || !S.pc) return;
-  $("motionState").textContent = "映像を解析中…";
-  const canvas = document.createElement("canvas");
-  canvas.width = 160;
-  canvas.height = 90;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) {
-    $("motionState").textContent = "このブラウザーは画像解析に対応していません";
+function renderMotionZones() {
+  const host = $("motionZoneList");
+  if (!host) return;
+  host.replaceChildren();
+  if (!S.motionZones.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "検知範囲がありません。「映像上で検知範囲を追加」を押してください。";
+    host.appendChild(empty);
+  }
+  S.motionZones.forEach(zone => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "motionZoneItem" + (zone.id === S.motionSelectedZoneId ? " selected" : "");
+    button.setAttribute("aria-pressed", zone.id === S.motionSelectedZoneId ? "true" : "false");
+    const name = document.createElement("b");
+    name.textContent = zone.name;
+    const detail = document.createElement("small");
+    detail.textContent = (zone.enabled ? "有効" : "停止中") + " · 感度 " +
+      ({low:"低",normal:"標準",high:"高"}[zone.sensitivity] || "標準") +
+      " · " + Math.round(zone.w * 100) + "×" + Math.round(zone.h * 100) + "%";
+    button.append(name, detail);
+    button.addEventListener("click", () => selectMotionZone(zone.id));
+    host.appendChild(button);
+  });
+  updateMotionZoneEditor();
+  drawMotionOverlay();
+}
+function updateMotionZoneEditor() {
+  const zone = selectedMotionZone();
+  $("motionZoneName").disabled = !zone;
+  $("motionZoneSensitivity").disabled = !zone;
+  $("saveMotionZone").disabled = !zone;
+  $("deleteMotionZone").disabled = !zone;
+  if (!zone) {
+    $("motionZoneName").value = "";
+    $("motionZoneSensitivity").value = "normal";
     return;
   }
-  S.motionTimer = setInterval(() => {
-    const video = $("remoteVideo");
-    if (!S.pc || document.hidden || video.readyState < 2 || !video.videoWidth) return;
-    try {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-      if (!S.motionPrevious) {
-        S.motionPrevious = new Uint8ClampedArray(pixels);
-        return;
-      }
-      let changed = 0;
-      const count = pixels.length / 4;
-      for (let i = 0; i < pixels.length; i += 4) {
-        const diff = Math.abs(pixels[i] - S.motionPrevious[i]) +
-          Math.abs(pixels[i + 1] - S.motionPrevious[i + 1]) +
-          Math.abs(pixels[i + 2] - S.motionPrevious[i + 2]);
-        if (diff > 54) changed++;
-      }
-      S.motionPrevious = new Uint8ClampedArray(pixels);
-      const ratio = changed / count;
-      const threshold = ({ low: 0.16, normal: 0.09, high: 0.045 })[$("motionSensitivity").value] || 0.09;
-      $("motionState").textContent = "解析中 · 変化 " + (ratio * 100).toFixed(1) + "%";
-      if (ratio >= threshold && Date.now() - S.motionLastTriggered >= 10000) {
-        recordMotionEvent(ratio);
-      }
-    } catch (error) {
-      $("motionState").textContent = "解析エラー";
-      console.debug("Motion analysis", error);
-    }
-  }, 700);
+  $("motionZoneName").value = zone.name;
+  $("motionZoneSensitivity").value = zone.sensitivity;
 }
-function recordMotionEvent(ratio) {
-  S.motionLastTriggered = Date.now();
-  const event = {
-    timestamp: new Date().toISOString(),
-    ratio: ratio,
-    sensitivity: $("motionSensitivity").value,
-    image: ""
+function selectMotionZone(id) {
+  S.motionSelectedZoneId = id;
+  renderMotionZones();
+}
+function saveSelectedMotionZone() {
+  const zone = selectedMotionZone();
+  if (!zone) return;
+  const name = $("motionZoneName").value.trim().replace(/[<>]/g, "").slice(0, 24);
+  zone.name = name || "範囲";
+  zone.sensitivity = ["low", "normal", "high"].includes($("motionZoneSensitivity").value)
+    ? $("motionZoneSensitivity").value : "normal";
+  saveMotionZones();
+  renderMotionZones();
+  toast("検知範囲の設定を保存しました。");
+}
+function deleteSelectedMotionZone() {
+  const zone = selectedMotionZone();
+  if (!zone) return;
+  S.motionZones = S.motionZones.filter(item => item.id !== zone.id);
+  S.motionSelectedZoneId = S.motionZones[0]?.id || "";
+  saveMotionZones();
+  S.personZoneStates = {};
+  renderMotionZones();
+  toast("検知範囲を削除しました。");
+}
+function setMotionDrawingMode(enabled) {
+  S.motionDrawingEnabled = !!enabled;
+  const overlay = $("motionOverlay");
+  overlay.classList.toggle("is-editing", S.motionDrawingEnabled);
+  $("cancelMotionZone").disabled = !S.motionDrawingEnabled;
+  $("addMotionZone").textContent = S.motionDrawingEnabled ? "映像上をドラッグして範囲指定中…" : "映像上で検知範囲を追加";
+  $("motionOverlayHint").classList.toggle("hidden", !S.motionDrawingEnabled);
+  if (!enabled) S.motionDraft = null;
+  drawMotionOverlay();
+}
+function beginMotionZoneDrawing() {
+  if (!S.pc || S.pc.connectionState !== "connected") {
+    toast("検知範囲を作るにはAndroidの映像へ接続してください。");
+    return;
+  }
+  const video = $("remoteVideo");
+  if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+    toast("映像が届いてから検知範囲を指定してください。");
+    return;
+  }
+  if (S.motionZones.length >= MAX_MOTION_ZONES) {
+    toast("検知範囲は最大" + MAX_MOTION_ZONES + "個です。不要な範囲を削除してください。");
+    return;
+  }
+  showVideo();
+  updateMotionOverlayLayout();
+  setMotionDrawingMode(true);
+  $("motionOverlayHint").textContent = "映像上をドラッグして検知範囲を指定";
+}
+function motionOverlayPoint(event) {
+  const rect = $("motionOverlay").getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return { x: clamp01((event.clientX - rect.left) / rect.width),
+    y: clamp01((event.clientY - rect.top) / rect.height) };
+}
+function handleMotionPointerDown(event) {
+  if (!S.motionDrawingEnabled || event.button !== 0) return;
+  const point = motionOverlayPoint(event);
+  if (!point) return;
+  event.preventDefault();
+  S.motionDraft = { x: point.x, y: point.y, x2: point.x, y2: point.y };
+  try { $("motionOverlay").setPointerCapture(event.pointerId); } catch (_) {}
+  drawMotionOverlay();
+}
+function handleMotionPointerMove(event) {
+  if (!S.motionDrawingEnabled || !S.motionDraft) return;
+  const point = motionOverlayPoint(event);
+  if (!point) return;
+  S.motionDraft.x2 = point.x; S.motionDraft.y2 = point.y;
+  drawMotionOverlay();
+}
+function handleMotionPointerUp(event) {
+  if (!S.motionDrawingEnabled || !S.motionDraft) return;
+  const point = motionOverlayPoint(event);
+  if (point) { S.motionDraft.x2 = point.x; S.motionDraft.y2 = point.y; }
+  const draft = S.motionDraft;
+  const x = Math.min(draft.x, draft.x2), y = Math.min(draft.y, draft.y2);
+  const w = Math.abs(draft.x2 - draft.x), h = Math.abs(draft.y2 - draft.y);
+  if (w < 0.02 || h < 0.02) {
+    setMotionDrawingMode(false);
+    toast("範囲が小さすぎます。もう一度ドラッグしてください。");
+    return;
+  }
+  const zone = {
+    id: "zone-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7),
+    name: "範囲" + (S.motionZones.length + 1), x, y, w, h, enabled: true, sensitivity: "normal"
+  };
+  S.motionZones.push(zone);
+  S.motionSelectedZoneId = zone.id;
+  saveMotionZones();
+  setMotionDrawingMode(false);
+  renderMotionZones();
+  $("motionEnabled").checked = true;
+  storageSet("rc_motion_enabled_v42", "1");
+  if (S.pc && !S.motionTimer && !document.hidden) startMotionDetection();
+  toast("検知範囲「" + zone.name + "」を追加しました。");
+}
+function updateMotionOverlayLayout() {
+  const canvas = $("motionOverlay"), pane = $("videoPane"), video = $("remoteVideo");
+  if (!canvas || !pane || !video) return;
+  const paneWidth = pane.clientWidth, paneHeight = pane.clientHeight;
+  if (!paneWidth || !paneHeight) return;
+  const videoWidth = video.videoWidth || paneWidth, videoHeight = video.videoHeight || paneHeight;
+  const fit = S.fitMode === "cover" ? "cover" : "contain";
+  const scale = fit === "cover" ? Math.max(paneWidth / videoWidth, paneHeight / videoHeight)
+    : Math.min(paneWidth / videoWidth, paneHeight / videoHeight);
+  const displayWidth = videoWidth * scale, displayHeight = videoHeight * scale;
+  canvas.style.left = ((paneWidth - displayWidth) / 2) + "px";
+  canvas.style.top = ((paneHeight - displayHeight) / 2) + "px";
+  canvas.style.width = displayWidth + "px";
+  canvas.style.height = displayHeight + "px";
+  canvas.style.transform = "scale(" + S.zoom + ")";
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const width = Math.max(1, Math.round(displayWidth * dpr));
+  const height = Math.max(1, Math.round(displayHeight * dpr));
+  if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+  drawMotionOverlay();
+}
+function drawMotionOverlay() {
+  const canvas = $("motionOverlay");
+  if (!canvas || !canvas.width || !canvas.height) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const colors = ["#4f8fe8", "#36a6b5", "#8a78d6", "#d59b42", "#5aa784"];
+  S.motionZones.forEach((zone, index) => {
+    const x = zone.x * canvas.width, y = zone.y * canvas.height;
+    const w = zone.w * canvas.width, h = zone.h * canvas.height;
+    const color = colors[index % colors.length];
+    ctx.save();
+    ctx.globalAlpha = zone.enabled ? 1 : 0.42;
+    ctx.fillStyle = color; ctx.globalAlpha *= 0.12; ctx.fillRect(x, y, w, h);
+    ctx.globalAlpha = zone.id === S.motionSelectedZoneId ? 1 : 0.78;
+    ctx.lineWidth = Math.max(2, canvas.width / 550);
+    ctx.setLineDash(zone.enabled ? [] : [8, 6]);
+    ctx.strokeStyle = color; ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+    const label = zone.name + (zone.enabled ? "" : "（停止）");
+    ctx.font = "600 " + Math.max(11, canvas.width / 70) + "px sans-serif";
+    const labelWidth = Math.min(w, ctx.measureText(label).width + 14);
+    ctx.globalAlpha = 0.94; ctx.fillStyle = "#ffffff";
+    ctx.fillRect(x, y, labelWidth, Math.max(22, canvas.width / 32));
+    ctx.fillStyle = color; ctx.fillText(label, x + 7, y + Math.max(15, canvas.width / 45));
+    ctx.restore();
+  });
+  if (S.motionDraft) {
+    const d = S.motionDraft;
+    const x = Math.min(d.x, d.x2) * canvas.width, y = Math.min(d.y, d.y2) * canvas.height;
+    const w = Math.abs(d.x2 - d.x) * canvas.width, h = Math.abs(d.y2 - d.y) * canvas.height;
+    ctx.save(); ctx.fillStyle = "rgba(61,132,220,0.15)"; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = "#2865d6"; ctx.lineWidth = Math.max(2, canvas.width / 500);
+    ctx.setLineDash([8, 5]); ctx.strokeRect(x, y, w, h); ctx.restore();
+  }
+}
+function motionZoneBounds(zone) {
+  return {
+    x0: Math.max(0, Math.min(MOTION_WIDTH - 1, Math.floor(zone.x * MOTION_WIDTH))),
+    y0: Math.max(0, Math.min(MOTION_HEIGHT - 1, Math.floor(zone.y * MOTION_HEIGHT))),
+    x1: Math.max(1, Math.min(MOTION_WIDTH, Math.ceil((zone.x + zone.w) * MOTION_WIDTH))),
+    y1: Math.max(1, Math.min(MOTION_HEIGHT, Math.ceil((zone.y + zone.h) * MOTION_HEIGHT)))
+  };
+}
+function findPersonCandidates(mask, bounds) {
+  const visited = new Uint8Array(mask.length), expanded = new Uint8Array(mask.length);
+  for (let y = bounds.y0; y < bounds.y1; y++) for (let x = bounds.x0; x < bounds.x1; x++) {
+    if (!mask[y * MOTION_WIDTH + x]) continue;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx >= bounds.x0 && nx < bounds.x1 && ny >= bounds.y0 && ny < bounds.y1)
+        expanded[ny * MOTION_WIDTH + nx] = 1;
+    }
+  }
+  const found = [];
+  for (let y = bounds.y0; y < bounds.y1; y++) for (let x = bounds.x0; x < bounds.x1; x++) {
+    const first = y * MOTION_WIDTH + x;
+    if (!expanded[first] || visited[first]) continue;
+    const stack = [first]; visited[first] = 1;
+    let area = 0, minX = x, maxX = x, minY = y, maxY = y;
+    while (stack.length) {
+      const index = stack.pop(), cx = index % MOTION_WIDTH, cy = Math.floor(index / MOTION_WIDTH);
+      area++; minX = Math.min(minX, cx); maxX = Math.max(maxX, cx);
+      minY = Math.min(minY, cy); maxY = Math.max(maxY, cy);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < bounds.x0 || nx >= bounds.x1 || ny < bounds.y0 || ny >= bounds.y1) continue;
+        const next = ny * MOTION_WIDTH + nx;
+        if (expanded[next] && !visited[next]) { visited[next] = 1; stack.push(next); }
+      }
+    }
+    const width = maxX - minX + 1, height = maxY - minY + 1;
+    const aspect = height / Math.max(1, width), fill = area / Math.max(1, width * height);
+    if (area >= 12 && height >= 10 && width >= 3 && aspect >= 1.15 && aspect <= 5.8 &&
+        fill >= 0.035 && width * height < MOTION_WIDTH * MOTION_HEIGHT * 0.32) {
+      found.push({ x:(minX+maxX)/2/MOTION_WIDTH, y:(minY+maxY)/2/MOTION_HEIGHT,width,height,area });
+    }
+  }
+  return found.sort((a,b)=>b.area-a.area).slice(0,8);
+}
+function movementDirection(previous, current) {
+  if (!previous || !current) return "方向未判定";
+  const dx=current.x-previous.x, dy=current.y-previous.y;
+  if (Math.max(Math.abs(dx),Math.abs(dy))<0.015) return "ほぼ同じ位置";
+  if (Math.abs(dx)>Math.abs(dy)*1.25) return dx>0?"右方向":"左方向";
+  return dy>0?"下方向":"上方向";
+}
+function motionEventLabel(event) {
+  if (event.kind==="person-entry") return "人物候補の進入";
+  if (event.kind==="person-exit") return "人物候補の退出";
+  if (event.kind==="person-motion") return "人物らしい動きを検知";
+  return "動体を検知";
+}
+function showMotionNotification(event) {
+  if (!("Notification" in window) || Notification.permission!=="granted") return;
+  const title="Remote Camera： "+motionEventLabel(event);
+  const body=event.zoneName+" / "+new Date(event.timestamp).toLocaleTimeString()+
+    (event.personCount>0?" / 人物候補 約"+event.personCount+"個":"");
+  const options={body,icon:"./icon-192.svg",tag:"rc-motion-"+event.zoneId+"-"+event.kind+"-"+Date.now()};
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistration("./").then(reg=>{
+      if (reg && reg.showNotification) return reg.showNotification(title,options);
+      new Notification(title,options); return null;
+    }).catch(()=>{try{new Notification(title,options);}catch(_){}});
+  } else { try{new Notification(title,options);}catch(_){} }
+}
+function recordMotionEvent(ratio, zone, kind, personCount=0, direction="") {
+  const event={
+    timestamp:new Date().toISOString(), ratio:Number(ratio)||0,
+    sensitivity:zone.sensitivity||$("motionSensitivity").value,
+    zoneId:zone.id, zoneName:zone.name, kind:kind||"motion",
+    personCount:Math.max(0,Number(personCount)||0), direction:direction||"", image:""
   };
   try {
-    const video = $("remoteVideo");
-    if (video.videoWidth && video.videoHeight) {
-      const image = document.createElement("canvas");
-      const scale = Math.min(1, 320 / video.videoWidth);
-      image.width = Math.max(1, Math.round(video.videoWidth * scale));
-      image.height = Math.max(1, Math.round(video.videoHeight * scale));
-      const ctx = image.getContext("2d");
-      ctx.drawImage(video, 0, 0, image.width, image.height);
-      event.image = image.toDataURL("image/jpeg", 0.55);
+    const video=$("remoteVideo");
+    if(video.videoWidth&&video.videoHeight){
+      const image=document.createElement("canvas"),scale=Math.min(1,240/video.videoWidth);
+      image.width=Math.max(1,Math.round(video.videoWidth*scale));
+      image.height=Math.max(1,Math.round(video.videoHeight*scale));
+      const ctx=image.getContext("2d");
+      if(ctx){ctx.drawImage(video,0,0,image.width,image.height);event.image=image.toDataURL("image/jpeg",0.42);}
     }
-  } catch (error) {
-    console.debug("Motion snapshot skipped", error);
-  }
+  } catch(error){console.debug("Motion snapshot skipped",error);}
   S.motionEvents.unshift(event);
-  S.motionEvents = S.motionEvents.slice(0, 12);
-  saveMotionEvents();
-  $("motionState").textContent = "⚠ 動きを検知 " + new Date(event.timestamp).toLocaleTimeString();
-  if ("Notification" in window && Notification.permission === "granted") {
-    try { new Notification("Remote Camera：動体を検知", { body: new Date(event.timestamp).toLocaleString() }); } catch (_) {}
+  S.motionEvents=S.motionEvents.slice(0,MAX_MOTION_EVENTS);
+  saveMotionEvents(); S.motionLastTriggered=Date.now();
+  $("motionState").textContent="検知："+zone.name+" · "+new Date(event.timestamp).toLocaleTimeString();
+  showMotionNotification(event);
+  toast(motionEventLabel(event)+"："+zone.name);
+  return event;
+}
+function stopMotionDetection(keepEnabled=true) {
+  if(S.motionTimer) clearInterval(S.motionTimer);
+  S.motionTimer=null; S.motionPrevious=null; S.personZoneStates={};
+  $("personState").textContent="人物候補：未解析";
+  $("motionState").textContent=keepEnabled&&$("motionEnabled").checked
+    ?(document.hidden?"バックグラウンドでは一時停止":"接続待ち・映像受信時に再開")
+    :"動体検知 OFF";
+  drawMotionOverlay();
+}
+function startMotionDetection() {
+  if(S.motionTimer||!S.pc||document.hidden||!$("motionEnabled").checked) return;
+  if(!S.motionZones.some(zone=>zone.enabled)){
+    $("motionState").textContent="有効な検知範囲がありません"; return;
   }
-  toast("動体を検知しました。イベント履歴に保存しました。");
+  $("motionState").textContent="映像を解析中…";
+  const canvas=document.createElement("canvas");
+  canvas.width=MOTION_WIDTH; canvas.height=MOTION_HEIGHT;
+  const context=canvas.getContext("2d",{willReadFrequently:true});
+  if(!context){$("motionState").textContent="このブラウザーは画像解析に対応していません";return;}
+  S.motionTimer=setInterval(()=>{
+    const video=$("remoteVideo");
+    if(!S.pc||document.hidden||video.readyState<2||!video.videoWidth) return;
+    try{
+      context.drawImage(video,0,0,MOTION_WIDTH,MOTION_HEIGHT);
+      const pixels=context.getImageData(0,0,MOTION_WIDTH,MOTION_HEIGHT).data;
+      if(!S.motionPrevious){S.motionPrevious=new Uint8ClampedArray(pixels);updateMotionOverlayLayout();return;}
+      const pixelCount=MOTION_WIDTH*MOTION_HEIGHT,mask=new Uint8Array(pixelCount);
+      let allChanged=0;
+      for(let p=0,i=0;p<pixelCount;p++,i+=4){
+        const diff=Math.abs(pixels[i]-S.motionPrevious[i])+Math.abs(pixels[i+1]-S.motionPrevious[i+1])+
+          Math.abs(pixels[i+2]-S.motionPrevious[i+2]);
+        if(diff>54){mask[p]=1;allChanged++;}
+      }
+      S.motionPrevious=new Uint8ClampedArray(pixels);
+      const globalRatio=allChanged/pixelCount;
+      let totalPersonCandidates=0;
+      const directionLabels=[];
+      if(globalRatio<0.58){
+        S.motionZones.forEach(zone=>{
+          if(!zone.enabled)return;
+          const bounds=motionZoneBounds(zone),width=Math.max(1,bounds.x1-bounds.x0);
+          const height=Math.max(1,bounds.y1-bounds.y0),area=width*height;
+          let changed=0;
+          for(let y=bounds.y0;y<bounds.y1;y++)for(let x=bounds.x0;x<bounds.x1;x++)
+            if(mask[y*MOTION_WIDTH+x])changed++;
+          const ratio=changed/area;
+          const sensitivity=zone.sensitivity||$("motionSensitivity").value;
+          const threshold=({low:0.16,normal:0.09,high:0.045})[sensitivity]||0.09;
+          const candidates=$("personCandidateEnabled").checked?findPersonCandidates(mask,bounds):[];
+          totalPersonCandidates+=candidates.length;
+          const state=S.personZoneStates[zone.id]||{
+            present:false,lastSeenAt:0,emptySince:0,lastMotionEventAt:0,centroid:null
+          };
+          const primary=candidates[0]||null;
+          const direction=primary?movementDirection(state.centroid,primary):"";
+          if(primary){
+            directionLabels.push(zone.name+":"+direction);
+            if(!state.present&&$("personEntryEnabled").checked){
+              recordMotionEvent(ratio,zone,"person-entry",candidates.length,direction);
+            }else if(ratio>=threshold&&Date.now()-state.lastMotionEventAt>=10000){
+              recordMotionEvent(ratio,zone,"person-motion",candidates.length,direction);
+            }
+            state.present=true;state.lastSeenAt=Date.now();state.emptySince=0;
+            state.centroid={x:primary.x,y:primary.y};
+          }else if(state.present){
+            if(!state.emptySince)state.emptySince=Date.now();
+            if(Date.now()-state.emptySince>=2300){
+              if($("personExitEnabled").checked)recordMotionEvent(ratio,zone,"person-exit",0,"範囲から消失");
+              state.present=false;state.centroid=null;state.emptySince=0;
+            }
+          }
+          if(!primary&&ratio>=threshold&&Date.now()-state.lastMotionEventAt>=10000)
+            recordMotionEvent(ratio,zone,"motion",0,"");
+          if(ratio>=threshold||primary)state.lastMotionEventAt=Date.now();
+          S.personZoneStates[zone.id]=state;
+        });
+      }
+      $("personState").textContent="人物候補（概算）："+totalPersonCandidates+"個"+
+        (directionLabels.length?" / "+directionLabels.slice(0,2).join("、"):"");
+      $("motionState").textContent=globalRatio>=0.58
+        ?"画面全体の急変を除外中（照明変化など）"
+        :"範囲別解析中 · 人物候補 "+totalPersonCandidates+"個";
+    }catch(error){$("motionState").textContent="解析エラー";console.debug("Motion analysis",error);}
+  },650);
 }
 async function requestMotionNotifications() {
-  if (!("Notification" in window)) return toast("このブラウザーは通知に対応していません。");
-  try {
-    const permission = await Notification.requestPermission();
-    toast(permission === "granted" ? "動体検知の通知を許可しました。" : "通知は許可されませんでした。");
-  } catch (_) { toast("通知許可を取得できませんでした。"); }
+  if(!("Notification" in window))
+    return toast("このブラウザーでは通知を利用できません。PWAをホーム画面に追加し、対応OSで確認してください。");
+  try{
+    const permission=await Notification.requestPermission();
+    toast(permission==="granted"?"通知を許可しました。PWAが動作中の検知で通知します。":"通知は許可されませんでした。");
+  }catch(_){toast("通知許可を取得できませんでした。");}
 }
 function renderMotionEvents() {
-  const host = $("motionRows");
-  host.replaceChildren();
-  if (!S.motionEvents.length) {
-    const empty = document.createElement("p");
-    empty.textContent = "検知イベントはありません。";
-    host.appendChild(empty);
-    return;
+  const host=$("motionRows");host.replaceChildren();
+  if(!S.motionEvents.length){
+    const empty=document.createElement("p");empty.textContent="検知イベントはありません。";host.appendChild(empty);return;
   }
-  for (const event of S.motionEvents) {
-    const row = document.createElement("div");
-    row.className = "motionrow";
-    const detail = document.createElement("span");
-    detail.textContent = new Date(event.timestamp).toLocaleString() +
-      " · 画面変化 " + (Number(event.ratio) * 100).toFixed(1) + "%";
+  S.motionEvents.forEach(event=>{
+    const row=document.createElement("div");row.className="motionrow";
+    const detail=document.createElement("span");
+    detail.textContent=new Date(event.timestamp).toLocaleString()+" · "+motionEventLabel(event)+" · "+event.zoneName+
+      (event.personCount?" · 人物候補 約"+event.personCount+"個":"")+
+      (event.direction?" · "+event.direction:"")+" · 画面変化 "+(Number(event.ratio)*100).toFixed(1)+"%";
     row.appendChild(detail);
-    if (event.image) {
-      const filename = "remote-camera-motion-" + event.timestamp.replace(/[^0-9T-]/g, "-") + ".jpg";
-      const preview = document.createElement("button");
-      preview.type = "button";
-      preview.className = "motionThumb";
-      preview.setAttribute("aria-label", "検知画像を全画面表示");
-      const image = document.createElement("img");
-      image.src = event.image;
-      image.alt = "動体検知時の静止画";
-      image.loading = "lazy";
-      const label = document.createElement("span");
-      label.textContent = "画像を表示";
-      preview.append(image, label);
-      preview.addEventListener("click", () => openImageViewer(
-        event.image, filename, "動体検知画像 · " + new Date(event.timestamp).toLocaleString()
-      ));
+    if(event.image){
+      const filename="remote-camera-motion-"+event.timestamp.replace(/[^0-9T-]/g,"-")+".jpg";
+      const preview=document.createElement("button");preview.type="button";preview.className="motionThumb";
+      preview.setAttribute("aria-label","検知画像を全画面表示");
+      const image=document.createElement("img");image.src=event.image;image.alt="検知時の静止画";image.loading="lazy";
+      const label=document.createElement("span");label.textContent="画像を表示";preview.append(image,label);
+      preview.addEventListener("click",()=>openImageViewer(event.image,filename,
+        motionEventLabel(event)+" · "+new Date(event.timestamp).toLocaleString()));
       row.appendChild(preview);
-      const link = document.createElement("a");
-      link.href = event.image;
-      link.download = filename;
-      link.textContent = "画像を保存";
-      row.appendChild(link);
+      const link=document.createElement("a");link.href=event.image;link.download=filename;
+      link.textContent="画像を保存";row.appendChild(link);
     }
     host.appendChild(row);
-  }
+  });
 }
-function showMotionEvents() {
-  renderMotionEvents();
-  $("motionDialog").showModal();
-}
+function showMotionEvents(){renderMotionEvents();$("motionDialog").showModal();}
 function exportMotionEvents() {
-  const rows = [["timestamp","change_ratio","sensitivity"]];
-  S.motionEvents.forEach(event => rows.push([
-    event.timestamp, Number(event.ratio).toFixed(4), event.sensitivity
+  const rows=[["timestamp","event_type","zone_name","change_ratio","person_count_estimate","direction","sensitivity"]];
+  S.motionEvents.forEach(event=>rows.push([
+    event.timestamp,motionEventLabel(event),event.zoneName,Number(event.ratio).toFixed(4),
+    String(event.personCount||0),event.direction||"",event.sensitivity||""
   ]));
-  const csv = "\uFEFF" + rows.map(row => row.map(value =>
-    '"' + String(value).replace(/"/g, '""') + '"'
-  ).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "remote-camera-motion-events.csv";
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const csv="\uFEFF"+rows.map(row=>row.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(",")).join("\r\n");
+  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+  const link=document.createElement("a");link.href=url;link.download="remote-camera-motion-events-v4.5.1.csv";
+  link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function registerPwa() {
+  if(!window.isSecureContext||!("serviceWorker" in navigator)){console.info("PWA service worker is unavailable.");return false;}
+  try{await navigator.serviceWorker.register("./sw.js",{scope:"./"});return true;}
+  catch(error){console.warn("PWA service worker registration failed",error);return false;}
 }
 
 async function connect(automatic = false) {
@@ -1881,6 +2218,7 @@ function showVideo() {
   $("videoPane").classList.remove("hidden");
   $("videoTab").classList.add("active");
   $("mapTab").classList.remove("active");
+  window.setTimeout(updateMotionOverlayLayout, 80);
 }
 function drawMap(points) {
   initMap();
@@ -1932,17 +2270,21 @@ window.addEventListener("online", () => {
   }
 });
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState !== "visible") return;
-  if (S.audioContext && S.audioContext.state === "suspended") {
-    S.audioContext.resume().catch(error => console.debug("AudioContext resume failed", error));
+  if (document.visibilityState !== "visible") {
+    if (S.motionTimer) stopMotionDetection(true);
+    if ($("motionEnabled") && $("motionEnabled").checked)
+      $("motionState").textContent = "バックグラウンドではOSの制御により検知を一時停止します";
+    return;
   }
+  if (S.audioContext && S.audioContext.state === "suspended")
+    S.audioContext.resume().catch(error => console.debug("AudioContext resume failed", error));
   if (S.keepAwakeWanted && !S.wakeLock) enableScreenWakeLock().catch(() => {});
   window.setTimeout(restoreRemotePlayback, 180);
+  updateMotionOverlayLayout();
   if (!S.pc) return;
   const state = S.pc.connectionState;
-  if (["disconnected", "failed", "closed"].includes(state)) {
-    scheduleReconnect(S.pc);
-  }
+  if (["disconnected", "failed", "closed"].includes(state)) scheduleReconnect(S.pc);
+  if ($("motionEnabled").checked) { S.motionPrevious = null; startMotionDetection(); }
 });
 
 document.addEventListener("fullscreenchange", () => window.setTimeout(restoreRemotePlayback, 180));
@@ -1950,9 +2292,13 @@ document.addEventListener("webkitfullscreenchange", () => window.setTimeout(rest
 $("remoteVideo").addEventListener("webkitendfullscreen", () => window.setTimeout(restoreRemotePlayback, 350));
 window.addEventListener("pageshow", () => window.setTimeout(restoreRemotePlayback, 180));
 window.addEventListener("resize", () => {
+  updateMotionOverlayLayout();
   if (S.pc && S.remoteVideoStream) window.setTimeout(restoreRemotePlayback, 150);
 });
+$("remoteVideo").addEventListener("loadedmetadata", updateMotionOverlayLayout);
+$("remoteVideo").addEventListener("resize", updateMotionOverlayLayout);
 document.addEventListener("DOMContentLoaded", async () => {
+  registerPwa();
   $("refresh").addEventListener("click", refreshDeviceList);
   $("pair").addEventListener("click", () => $("pairDialog").showModal());
   $("pairQuick").addEventListener("click", () => $("pair").click());
@@ -1998,17 +2344,39 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("history").addEventListener("click", () => loadHistory().catch(error => toast(error.message)));
   $("deleteHistory").addEventListener("click", () => deleteHistory().catch(error => toast(error.message)));
   S.motionEvents = readMotionEvents();
+  S.motionZones = readMotionZones();
+  S.motionSelectedZoneId = S.motionZones[0]?.id || "";
   $("motionEnabled").checked = storageGet("rc_motion_enabled_v42", "0") === "1";
+  $("personCandidateEnabled").checked = storageGet("rc_person_candidate_v451", "1") !== "0";
+  $("personEntryEnabled").checked = storageGet("rc_person_entry_v451", "1") !== "0";
+  $("personExitEnabled").checked = storageGet("rc_person_exit_v451", "1") !== "0";
+  renderMotionZones();
   $("motionEnabled").addEventListener("change", event => {
     const enabled = event.target.checked;
     storageSet("rc_motion_enabled_v42", enabled ? "1" : "0");
     if (enabled) {
-      if (S.pc) startMotionDetection();
-      else $("motionState").textContent = "接続後に解析を開始します";
-    } else {
-      stopMotionDetection(false);
-    }
+      if (S.pc && !document.hidden) startMotionDetection();
+      else $("motionState").textContent = "接続後・画面表示中に解析を開始します";
+    } else stopMotionDetection(false);
   });
+  $("addMotionZone").addEventListener("click", beginMotionZoneDrawing);
+  $("cancelMotionZone").addEventListener("click", () => setMotionDrawingMode(false));
+  $("saveMotionZone").addEventListener("click", saveSelectedMotionZone);
+  $("motionZoneName").addEventListener("change", saveSelectedMotionZone);
+  $("motionZoneSensitivity").addEventListener("change", saveSelectedMotionZone);
+  $("deleteMotionZone").addEventListener("click", deleteSelectedMotionZone);
+  $("motionOverlay").addEventListener("pointerdown", handleMotionPointerDown);
+  $("motionOverlay").addEventListener("pointermove", handleMotionPointerMove);
+  $("motionOverlay").addEventListener("pointerup", handleMotionPointerUp);
+  $("motionOverlay").addEventListener("pointercancel", () => { S.motionDraft=null; setMotionDrawingMode(false); });
+  $("personCandidateEnabled").addEventListener("change", event => {
+    storageSet("rc_person_candidate_v451", event.target.checked ? "1" : "0");
+    S.personZoneStates = {};
+  });
+  $("personEntryEnabled").addEventListener("change", event =>
+    storageSet("rc_person_entry_v451", event.target.checked ? "1" : "0"));
+  $("personExitEnabled").addEventListener("change", event =>
+    storageSet("rc_person_exit_v451", event.target.checked ? "1" : "0"));
   $("motionNotifications").addEventListener("click", requestMotionNotifications);
   $("motionEvents").addEventListener("click", showMotionEvents);
   $("exportMotionEvents").addEventListener("click", exportMotionEvents);
@@ -2098,6 +2466,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("fpsLimit").addEventListener("change", () => saveSettings().catch(error => toast(error.message)));
   $("refreshStatus").disabled = true;
   updateViewerTransform();
+  updateMotionOverlayLayout();
   try {
     await loadConfig();
     S.devices = readDevices();

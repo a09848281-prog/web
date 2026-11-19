@@ -1,0 +1,74 @@
+name: Deploy Remote Camera v4.5.1 Side-by-side Preview
+on:
+  push:
+    branches:
+      - rebuild-v4.5.1-smart-motion-pwa
+    paths:
+      - "web/**"
+      - ".github/workflows/deploy-pages-v451-preview.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages-v451-preview
+      url: ${{ steps.deployment.outputs.page_url }}v4.5.1-preview/
+    steps:
+      - name: Checkout published v4.2 website
+        uses: actions/checkout@v4
+        with:
+          ref: rebuild-v4.2-multi-viewer-camera
+          path: base-v42
+      - name: Checkout v4.2.2 preview source
+        uses: actions/checkout@v4
+        with:
+          ref: rebuild-v4.2.2-ultra-stable-controls
+          path: v422
+      - name: Checkout v4.5.1 preview source
+        uses: actions/checkout@v4
+        with:
+          ref: rebuild-v4.5.1-smart-motion-pwa
+          path: v451
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Build side-by-side Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s base-v42/web/index.html
+          test -s v422/web/index.html
+          test -s v451/web/index.html
+          test -s v451/web/manifest.webmanifest
+          test -s v451/web/sw.js
+          node --check base-v42/web/app.js
+          node --check v422/web/app.js
+          node --check v451/web/app.js
+          node --check v451/web/sw.js
+          node -e 'if(require("./base-v42/web/config.json").appVersion!=="4.2.0") throw new Error("Existing root must remain v4.2.0");'
+          node -e 'if(require("./v422/web/config.json").appVersion!=="4.2.2") throw new Error("Existing v4.2.2 preview must remain unchanged");'
+          node -e 'const c=require("./v451/web/config.json"); if(c.appVersion!=="4.5.1"||!c.gasUrl.endsWith("/exec")) throw new Error("v4.5.1 config is invalid");'
+          mkdir -p _site/v4.2.2-preview _site/v4.5.1-preview
+          cp -a base-v42/web/. _site/
+          cp -a v422/web/. _site/v4.2.2-preview/
+          cp -a v451/web/. _site/v4.5.1-preview/
+          test -s _site/index.html
+          test -s _site/v4.2.2-preview/index.html
+          test -s _site/v4.5.1-preview/index.html
+          echo "v4.2 root and v4.2.2 preview are preserved; v4.5.1 is side-by-side."
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy all versions
+        id: deployment
+        uses: actions/deploy-pages@v4
