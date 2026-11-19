@@ -1335,7 +1335,18 @@ async function pollAnswers() {
           // Non-trickle ICE: no further GAS signal polling is needed after the complete answer.
           return;
         } else if (signal.kind === "error") {
-          toast(signal.sdp || "Android側で接続エラーが発生しました。");
+          const reason = String(signal.sdp || "Android側で接続エラーが発生しました。");
+          toast(reason);
+          if (reason.includes("上限")) {
+            // An explicit capacity rejection is not transient: stop this
+            // pending peer and let the user disconnect another viewer first.
+            await disconnect(true);
+          } else {
+            // SDP/RTC failures are session-local. Rebuild only this viewer;
+            // Android keeps the other peer connections alive.
+            scheduleReconnect(S.pc);
+          }
+          return;
         }
       }
     } catch (error) {
