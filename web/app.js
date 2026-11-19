@@ -94,6 +94,18 @@ function storageRemove(key) {
     return false;
   }
 }
+function notifyBookmarkletPanel(action) {
+  const isBookmarkletEmbed = new URLSearchParams(location.search).get("embed") === "bookmarklet";
+  if (!isBookmarkletEmbed || window.parent === window) return;
+  try {
+    window.parent.postMessage({
+      channel: "remote-camera-v42-bookmarklet",
+      action: action
+    }, "*");
+  } catch (error) {
+    console.debug("Bookmarklet panel resize request skipped", error);
+  }
+}
 function rid() {
   return (crypto.randomUUID && crypto.randomUUID()) ||
     (Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -331,7 +343,7 @@ async function claimDevice() {
     $("viewerCount").textContent = "閲覧端末: " + (result.viewerCount || 1) + "/" + (result.maxViewers || 3);
     toast(devicesSaved
       ? "このブラウザーを閲覧端末として登録しました。"
-      : "登録自体は完了しましたが、このブラウザーの保存領域が使えません。タブを閉じる前に保存設定を確認してください。");
+      : "登録自体は完了しましたが、このブラウザーはペアリング情報を保存できません。ページを閉じると再登録が必要になる場合があります。");
   } catch (error) {
     message("pairMessage", error.message);
   } finally {
@@ -710,6 +722,7 @@ function openImageViewer(source, filename, title, ownsObjectUrl = false) {
   $("imageViewerDownload").disabled = false;
   const dialog = $("imageViewerDialog");
   if (!dialog.open) dialog.showModal();
+  notifyBookmarkletPanel("expand-image");
 }
 function releaseImageViewerSource() {
   $("imageViewerImage").removeAttribute("src");
@@ -933,11 +946,14 @@ function readMotionEvents() {
     return value.filter(event =>
       event && typeof event.timestamp === "string" &&
       Number.isFinite(Date.parse(event.timestamp)) &&
-      Number.isFinite(Number(event.ratio)) &&
-      (typeof event.image !== "string" ||
-        event.image === "" ||
-        (event.image.startsWith("data:image/jpeg;base64,") && event.image.length <= 180000))
-    ).slice(0, 12);
+      Number.isFinite(Number(event.ratio))
+    ).slice(0, 12).map(event => ({
+      ...event,
+      // Keep the event metadata even when an old or oversized image is invalid.
+      image: typeof event.image === "string" &&
+        event.image.startsWith("data:image/jpeg;base64,") &&
+        event.image.length <= 180000 ? event.image : ""
+    }));
   } catch (_) { return []; }
 }
 function saveMotionEvents() {
@@ -1833,6 +1849,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.exitFullscreen().catch(() => {});
     }
     releaseImageViewerSource();
+    notifyBookmarkletPanel("restore-panel");
   });
   $("videoTab").addEventListener("click", showVideo);
   $("mapTab").addEventListener("click", showMap);
