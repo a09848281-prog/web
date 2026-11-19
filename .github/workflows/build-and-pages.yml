@@ -313,6 +313,14 @@ jobs:
               !bookmarklet.includes('Remote Camera v4.2')) {
             throw new Error('v4.2 motion detection, event export, viewer heartbeat or bookmarklet is missing.');
           }
+          if (!app.includes('function notifyBookmarkletPanel') ||
+              !app.includes('notifyBookmarkletPanel("expand-image")') ||
+              !app.includes('notifyBookmarkletPanel("restore-panel")') ||
+              !bookmarklet.includes('remote-camera-v42-bookmarklet') ||
+              !bookmarklet.includes('event.source !== frame.contentWindow') ||
+              !bookmarklet.includes('image-fullscreen')) {
+            throw new Error('Bookmarklet image view must expand the parent panel safely and restore it on close.');
+          }
           for (const id of ['imageViewerDialog','imageViewerImage','imageViewerTitle','imageViewerDownload','imageViewerFullscreen','imageViewerClose']) {
             if (!html.includes('id="' + id + '"')) throw new Error('Missing received-image viewer element: ' + id);
           }
