@@ -7,8 +7,8 @@
 4. **デプロイを管理 → 編集 → 新バージョン**で再デプロイし、既存/exec URLを維持。
 
 ## Android
-1. [GitHub Actionsの成功ビルド](https://github.com/a09848281-prog/web/actions/runs/44525164510)を開く。
-2. Artifact `remote-camera-debug-apk-v4.5.1`（Artifact ID: 14529797611）をダウンロード、展開して `app-debug.apk` をインストール。
+1. [GitHub Actionsの成功ビルド](https://github.com/a09848281-prog/web/actions/runs/44526203866)を開く。
+2. Artifact `remote-camera-debug-apk-v4.5.1`（Artifact ID: 14529953480）をダウンロード、展開して `app-debug.apk` をインストール。
 3. 必要なカメラ・マイク・通知権限を許可して監視待機を開始。
 4. v4.5.1は別applicationId。新しい8桁ペアリングコードで登録。
 
