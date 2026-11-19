@@ -5,9 +5,9 @@
 ## GitHub Actions
 
 - 最新Android / ソース検査：成功  
-  https://github.com/a09848281-prog/web/actions/runs/44489831642
+  https://github.com/a09848281-prog/web/actions/runs/44490462920
 - 最新GitHub Pages v4.2 Preview：成功  
-  https://github.com/a09848281-prog/web/actions/runs/44489823826
+  https://github.com/a09848281-prog/web/actions/runs/44490446343
 - Deployログの公開URL： https://a09848281-prog.github.io/web/
 
 Web JavaScript構文、GAS JavaScript構文、HTML ID / API互換、v4.2機能・バージョン整合、Gradle APKビルド、APK必須権限検査、Pagesファイル検査、Pages artifact作成、Deployが成功した。
