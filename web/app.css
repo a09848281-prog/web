@@ -315,3 +315,14 @@ dialog::backdrop{background:rgba(204,218,235,.48)}
   .motionZoneActions>*{flex:1 1 100%}
   .motionOverlayHint{max-width:calc(100% - 20px);white-space:normal;text-align:center}
 }
+
+/* v4.5.1 white control accents — avoid dark/red/yellow control blocks */
+.viewerControls #ptt.pttProminent,
+.viewerControls #ptt.pttProminent.active{
+  background:#edf4fc;color:#526b89;border:1px solid #dce8f5;
+  box-shadow:none;transform:none
+}
+#flashlight,#flashlight.active{
+  background:#f4f8fd;color:#526b89;border:1px solid #dce8f5
+}
+#keepAwake.active{background:#eef6f1;color:#5d826d}
