@@ -62,7 +62,7 @@ jobs:
           if (right.includes('id="connect"') || right.includes('class="viewerControls"') || right.includes('class="motionTools"')) throw Error('Right screen contains control UI.');
           if (!right.includes('id="videoPane"') || !right.includes('id="remoteVideo"') || !right.includes('id="mapPane"')) throw Error('Right screen lost video/map output.');
           if (!html.includes('id="imageViewerDialog"') || !html.includes('id="imageViewerImage"') || !css.includes('.imageViewerDialog[open]')) throw Error('Full-screen received image viewer missing.');
-          if (!app.includes('function openImageViewer') || !app.includes('function closeImageViewer')) throw Error('Image viewer handlers missing.');
+          if (!app.includes('function openImageViewer') || !app.includes('function releaseImageViewerSource')) throw Error('Image viewer handlers missing.');
           console.log('v4.2 UI layout, unique IDs and image viewer checks passed.');
           NODE
       - name: Build Android v4.2 APK
