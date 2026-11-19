@@ -1,5 +1,32 @@
 # Android・iPad 遠隔監視カメラシステム
 
+## v4.2.0 複数端末同時監視プレビュー（実機検証前）
+
+開発ブランチ：rebuild-v4.2-multi-viewer-camera  
+ベース：v4.1完全統合プレビュー  
+Android applicationId：jp.a09848281.remotecamera.v42preview  
+Android versionCode：420 / versionName：4.2.0  
+Web / GAS API：4.2.0 / Firebase不使用
+
+### v4.2追加機能5つ
+1. 1台のAndroidを最大3台のiPad・PCから同時監視。
+2. 閲覧端末ごとに独立したペアリング・認証情報・切断。1台の切断は他端末に影響しない。
+3. 登録済み閲覧端末の一覧、名前、オンライン確認状況、最終応答時刻。
+4. ブラウザー内での動体検知（低 / 標準 / 高）。
+5. 検知静止画・イベント履歴・CSV出力・許可制ブラウザー通知。
+
+動体検知は閲覧ブラウザー内のみで解析し、イベント画像をGASへ送信しません。背景タブや画面ロック中の継続は保証されません。最大3台は同時接続の安全上限で、端末性能・ネットワーク帯域によっては画質調整が必要です。
+
+### v4.2ドキュメント
+- docs/REMOTE-CAMERA-v4.2-SPEC.md
+- docs/QUICKSTART-v4.2.0.md
+- docs/GAS-REDEPLOY-v4.2.0.md
+- docs/TEST-PLAN-v4.2.0.md
+- docs/BOOKMARKLET-v4.2-UI.md
+
+---
+
+
 ## v4.1.0 完全統合プレビュー（実機検証前）
 
 作業ブランチ：`rebuild-v4.1-complete-stable`  
