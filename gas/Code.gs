@@ -1,5 +1,5 @@
 /**
- * Remote Camera GAS API v4.1
+ * Remote Camera GAS API v4.2
  * Account-free camera-first API.
  * Web controller access is granted only by an expiring Android pairing code.
  */
