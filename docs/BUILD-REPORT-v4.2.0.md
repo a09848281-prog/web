@@ -4,25 +4,25 @@
 
 ## 最新GitHub Actions結果
 
-- 最終Pull Requestソース検査・APKビルド：**成功**
-  - Run: https://github.com/a09848281-prog/web/actions/runs/44490794076
+- 最新Pull Requestソース検査・APKビルド：**成功**
+  - Run #211: https://github.com/a09848281-prog/web/actions/runs/44491265208
   - 対象ブランチ：`rebuild-v4.2-multi-viewer-camera`
-  - Commit：`0cc5ae40b8c5c0a7a9eadc9881229d7b9c970423`
-- Pushソース検査・APKビルド：**成功**
-  - Run: https://github.com/a09848281-prog/web/actions/runs/44490446412
+  - Commit：`88924b1752ea055db00b928f814d082ac7f80e19`
+- 最新Pushソース検査・APKビルド：**成功**
+  - Run #210: https://github.com/a09848281-prog/web/actions/runs/44491255984
 - GitHub Pages v4.2 Preview：**成功**
-  - Run #9: https://github.com/a09848281-prog/web/actions/runs/44490446343
-  - Pages deployment commit：`9974b7472640aeab403686a2cff57d1ffcbeb263`
+  - Run #10: https://github.com/a09848281-prog/web/actions/runs/44491250215
+  - Pages deployment commit：`7113db6a31c7bb7d129a12b21c31b8282409a0d0`
   - 公開URL： https://a09848281-prog.github.io/web/
 
 ## Android APK
 
 - Artifact名：`remote-camera-debug-apk-v4.2`
-- Artifact ID：`14512228729`
-- サイズ：26,096,198 bytes
-- Artifact ZIP SHA-256：`ad4335c1a2f8182cbe2a33aae27023d8583103862853551b6adb10dc51a5b425`
-- 取得先： https://github.com/a09848281-prog/web/actions/runs/44490794076
-- 有効期限：2026年12月19日 08:49 UTC
+- Artifact ID：`14513121605`
+- サイズ：26,096,724 bytes
+- Artifact ZIP SHA-256：`e3c5db980937435ab1ca3688ada72d3ed4a46bec07809524840959d8309ef507`
+- 取得先： https://github.com/a09848281-prog/web/actions/runs/44491265208
+- 有効期限：2026年12月19日 08:53 UTC
 
 GitHub ActionsのArtifact欄からZIPをダウンロードし、展開した `app-debug.apk` をAndroidへインストールします。
 
@@ -47,6 +47,8 @@ GitHub ActionsのArtifact欄からZIPをダウンロードし、展開した `ap
 - ICE候補収集のタイムアウト時に、不完全なSDPを送信しない。
 - 接続時間表示の時間整形を同期関数へ修正。
 - 閲覧端末の個別切断・自動再接続時、sessionIdごとの終了をWebRTCとGASの両経路で通知。
+- Android側のSDP設定・応答作成失敗時は失敗セッションだけを解放し、他のPeerConnectionを保持。
+- 4台目の上限エラーを受けたWeb側は接続待機を終了して無限再試行を防止。
 - v4.2 Pages公開workflowを専用Environmentへ分離し、main側のロールバックを妨げないよう同時デプロイを直列化。
 
 ## 実機確認は未完了
