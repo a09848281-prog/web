@@ -47,10 +47,10 @@ jobs:
           const html = fs.readFileSync('web/index.html', 'utf8');
           const app = fs.readFileSync('web/app.js', 'utf8');
           const css = fs.readFileSync('web/app.css', 'utf8');
-          const ids = [...html.matchAll(/\\bid=["']([^"']+)["']/g)].map(x => x[1]);
+          const ids = [...html.matchAll(/id="([^"]+)"/g)].map(x => x[1]);
           const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
           if (dupes.length) throw Error('Duplicate IDs: ' + [...new Set(dupes)].join(', '));
-          const missing = [...new Set([...app.matchAll(/\\$\\(["']([^"']+)["']\\)/g)].map(x => x[1]).filter(id => !ids.includes(id)))];
+          const missing = [...new Set([...app.matchAll(/\$\("([^"]+)"\)/g)].map(x => x[1]).filter(id => !ids.includes(id)))];
           if (missing.length) throw Error('Missing JS element IDs: ' + missing.join(', '));
           const asideEnd = html.indexOf('</aside>');
           const viewStart = html.indexOf('<section class="view"');
