@@ -33,7 +33,7 @@ class RtcEngine(
     private val audioPickupMode: String,
     private val scope: CoroutineScope,
     private val onState: (String) -> Unit,
-    private val onControlCommand: (String, JSONObject) -> Unit = {}
+    private val onControlCommand: (String, JSONObject) -> Unit = { _, _ -> }
 ) {
     private val peers = ConcurrentHashMap<String, PeerConnection>()
     private val videoSenders = ConcurrentHashMap<String, RtpSender>()
@@ -505,7 +505,7 @@ class RtcEngine(
                 ?: error("PeerConnectionを作成できません。")
             peers[sessionId] = peer
 
-remove stale peer teardown            videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
+videoSenders[sessionId] = peer.addTrack(videoTrack, listOf("remote-camera"))
             peer.addTrack(audioTrack, listOf("remote-camera"))
             applySenderParameters(profileFor(currentQuality, currentDataMode))
             peer.setRemoteDescription(object : SdpObserver {
