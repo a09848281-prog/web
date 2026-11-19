@@ -7,6 +7,7 @@
 - 最大8範囲、正規化座標、範囲内差分検出
 - 人物候補・進入・退出・方向推定
 - GAS API version 4.5.1と既存シート構成
+- Android preview Config.kt URLがv4.5.1ブランチのweb/config.jsonを参照
 - Android versionCode/applicationId整合、Gradle APK build
 
 ## iPad Safari / PWA実機
