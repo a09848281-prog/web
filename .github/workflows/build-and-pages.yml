@@ -28,6 +28,8 @@ jobs:
           gradle-version: "8.9"
       - name: Check web JavaScript syntax
         run: node --check web/app.js
+      - name: Check Face ID JavaScript syntax
+        run: node --check web/face-recognition/app.js
       - name: Check GAS JavaScript syntax
         run: cp gas/Code.gs /tmp/gas-check.js && node --check /tmp/gas-check.js
       - name: Check Web IDs and API action compatibility
