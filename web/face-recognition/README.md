@@ -4,7 +4,7 @@ GitHub Pagesで動く端末内処理型の顔認識Webアプリです。既存�
 
 ## 起動
 1. GitHub Pagesでリポジトリを公開します。
-2. https://a09848281-prog.github.io/web/face-recognition/ をHTTPSで開きます。
+2. https://a09848281-prog.github.io/face-recognition/ をHTTPSで開きます。
 3. カメラを許可します。
 4. 登録人物から同じ人物の顔サンプルを3枚以上登録します。
 5. リアルタイム認識でカメラを起動します。
