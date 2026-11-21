@@ -1,5 +1,8 @@
 # Android・iPad 遠隔監視カメラシステム
 
+## v3.8 UI付きブックマークレット
+[登録手順・コード](docs/BOOKMARKLET-v3.8-UI.md)
+
 Firebase非使用・GAS／GitHub／Googleスプレッドシート構成の個人利用プロジェクトです。
 
 ## 現行方式 v3.3
